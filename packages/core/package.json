@@ -1,0 +1,35 @@
+{
+  "name": "@holomem/core",
+  "version": "1.0.0",
+  "description": "Arkiv protocol layer — cryptographic memory mesh on Braga testnet",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./crypto": "./dist/crypto/ecies.js",
+    "./constants": "./dist/constants.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "node --env-file ../../.env --import tsx/esm src/index.ts",
+    "demo": "node --env-file ../../.env dist/index.js \"What are the critical challenges and opportunities facing decentralized AI infrastructure in 2026?\"",
+    "demo:mock": "node --env-file ../../.env dist/index.js --mock \"What are the critical challenges and opportunities facing decentralized AI infrastructure in 2026?\"",
+    "test:onchain": "node --env-file ../../.env dist/test-onchain.js"
+  },
+  "engines": {
+    "node": "22.10.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@arkiv-network/sdk": "latest",
+    "chalk": "^5.0.0",
+    "dotenv": "^16.0.0",
+    "eciesjs": "^0.4.3",
+    "ora": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}

@@ -1,15 +1,42 @@
 node_modules/
 dist/
+
+# Build artifacts in workspaces
+packages/*/dist/
+apps/*/dist/
+
+# TypeScript generated files
 *.js.map
 *.d.ts
+*.d.ts.map
 
 # Secrets
 .env
 .env.local
 .env.*.local
 
+# SDK encryption key files (produced by HoloMem.saveKey())
+*.key
+
 # Product & internal notes
 product_memory.md
 
 # Arkiv audit registry
 hashRegistry.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.python-version
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

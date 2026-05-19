@@ -1,0 +1,32 @@
+{
+  "name": "@holomem/api",
+  "version": "1.0.0",
+  "description": "HoloMem REST API — managed wallet pool, API key auth, Arkiv persistence",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "node --env-file ../../.env --import tsx/esm src/index.ts",
+    "start": "node --env-file ../../.env dist/index.js",
+    "db:migrate": "node --env-file ../../.env --import tsx/esm src/db/migrate.ts",
+    "test:integration": "node --env-file ../../.env --import tsx/esm src/test-integration.ts"
+  },
+  "engines": {
+    "node": "22.10.0"
+  },
+  "dependencies": {
+    "@arkiv-network/sdk": "latest",
+    "@fastify/cors": "^9.0.0",
+    "@fastify/helmet": "^11.0.0",
+    "dotenv": "^16.0.0",
+    "fastify": "^4.28.0",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@holomem/sdk": "*",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}

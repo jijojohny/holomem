@@ -1,31 +1,26 @@
 {
-  "name": "holomem-core",
+  "name": "holomem",
   "version": "1.0.0",
-  "description": "Cryptographic Memory Mesh for Autonomous Collaborative Agent Swarms — built on Arkiv Braga testnet",
-  "type": "module",
-  "main": "dist/index.js",
+  "private": true,
+  "description": "HoloMem — Cryptographic Memory Mesh for Autonomous Collaborative Agent Swarms",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "build": "tsc",
-    "dev": "tsx src/index.ts",
-    "demo": "node dist/index.js \"What are the critical challenges and opportunities facing decentralized AI infrastructure in 2026?\"",
-    "demo:mock": "node dist/index.js --mock \"What are the critical challenges and opportunities facing decentralized AI infrastructure in 2026?\"",
-    "start": "node dist/index.js",
-    "test:onchain": "node dist/test-onchain.js"
+    "build": "npm run build -w packages/core && npm run build -w packages/sdk-ts && npm run build -w apps/api",
+    "demo": "npm run demo -w packages/core",
+    "demo:mock": "npm run demo:mock -w packages/core",
+    "api:dev": "npm run dev -w apps/api",
+    "api:start": "npm run start -w apps/api",
+    "db:up": "docker compose -f infra/docker-compose.yml up -d",
+    "db:migrate": "npm run db:migrate -w apps/api",
+    "test:integration": "npm run test:integration -w apps/api"
   },
   "engines": {
     "node": "22.10.0"
   },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
-    "@arkiv-network/sdk": "latest",
-    "chalk": "^5.0.0",
-    "dotenv": "^16.0.0",
-    "eciesjs": "^0.4.3",
-    "ora": "^8.0.0"
-  },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.8.0"
   }
 }
