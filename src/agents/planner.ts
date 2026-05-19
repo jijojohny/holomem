@@ -33,7 +33,7 @@ export async function runPlanner(researchQuestion: string, mock = false): Promis
   }
 
   const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 1024,
     messages: [{
       role: 'user',
@@ -52,7 +52,9 @@ Return ONLY a JSON array with this exact structure, no other text:
   });
 
   const rawText = response.content[0].type === 'text' ? response.content[0].text : '[]';
-  const steps: PlanStep[] = JSON.parse(rawText.trim());
+  // Strip markdown code fences if Claude wraps the JSON in ```json ... ```
+  const cleaned = rawText.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  const steps: PlanStep[] = JSON.parse(cleaned);
 
   const planPayload = JSON.stringify({ question: researchQuestion, steps, sessionId, createdAt: new Date().toISOString() });
   const encrypted = encryptEpisodicData(planPayload, agentPublicKey);

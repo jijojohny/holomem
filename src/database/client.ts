@@ -14,9 +14,11 @@ export const publicClient = createPublicClient({
 });
 
 function getWalletClient() {
-  const pk = process.env.AGENT_PRIVATE_KEY;
-  if (!pk) throw new Error('AGENT_PRIVATE_KEY not set in .env');
-  const account = privateKeyToAccount(pk as `0x${string}`);
+  const raw = process.env.AGENT_PRIVATE_KEY;
+  if (!raw) throw new Error('AGENT_PRIVATE_KEY not set in .env');
+  const pk = (raw.startsWith('0x') ? raw : `0x${raw}`) as `0x${string}`;
+  if (pk.length !== 66) throw new Error(`AGENT_PRIVATE_KEY must be 32 bytes (64 hex chars). Got ${pk.length - 2} chars.`);
+  const account = privateKeyToAccount(pk);
   return {
     client: createWalletClient({ account, chain: braga, transport: rpcTransport }),
     publicKey: account.publicKey,
