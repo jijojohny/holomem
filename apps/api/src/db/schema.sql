@@ -1,8 +1,10 @@
 CREATE TABLE IF NOT EXISTS customers (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email       TEXT UNIQUE NOT NULL,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email              TEXT UNIQUE NOT NULL,
+  stripe_customer_id TEXT,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
 
 CREATE TABLE IF NOT EXISTS api_keys (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

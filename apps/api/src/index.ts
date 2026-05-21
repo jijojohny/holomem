@@ -9,6 +9,8 @@ import { registerRateLimiter } from './auth/rateLimiter.js';
 import { memoriesRoutes } from './routes/memories.js';
 import { keysRoutes } from './routes/keys.js';
 import { usageRoutes } from './routes/usage.js';
+import { sessionsRoutes } from './routes/sessions.js';
+import { billingRoutes } from './routes/billing.js';
 
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
 
@@ -39,6 +41,8 @@ registerRateLimiter(app);
 await app.register(memoriesRoutes);
 await app.register(keysRoutes);
 await app.register(usageRoutes);
+await app.register(sessionsRoutes);
+await app.register(billingRoutes);
 
 app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
 
