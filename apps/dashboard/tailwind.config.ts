@@ -11,7 +11,8 @@ const config: Config = {
         accent: '#7c3aed',
       },
       fontFamily: {
-        mono: ['ui-monospace', 'SFMono-Regular', 'monospace'],
+        sans: ['var(--font-inter)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
     },
   },

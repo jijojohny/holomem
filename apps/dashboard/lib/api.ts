@@ -74,3 +74,47 @@ export interface Session {
   memory_count: number;
   last_activity: string;
 }
+
+export interface MemoryEntry {
+  entity_key: string;
+  session_id: string;
+  agent_id: string | null;
+  ttl_tier: 'working' | 'episodic' | 'persistent';
+  created_at: string;
+  expires_at: string;
+}
+
+export interface DayUsage {
+  day: string;
+  writes: number;
+}
+
+export interface Account {
+  email: string;
+  created_at: string;
+}
+
+export interface Webhook {
+  id: string;
+  url: string;
+  events: string[];
+  active: boolean;
+  created_at: string;
+  last_status: number | null;
+  last_delivered_at: string | null;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  event_type: string;
+  status_code: number | null;
+  error: string | null;
+  created_at: string;
+}
+
+export interface ActivityEvent {
+  event_type: string;
+  session_id: string | null;
+  entity_key: string | null;
+  created_at: string;
+}

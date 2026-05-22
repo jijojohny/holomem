@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { db } from '../db/pool.js';
 import { writeMemory, readMemory, listSessionMemories, TTL_SECONDS, type TtlTier } from '../arkiv.js';
+import { deliverWebhooks } from '../webhooks.js';
 import '../types.js';
 
 const TTL_TIERS: TtlTier[] = ['working', 'episodic', 'persistent'];
@@ -53,6 +54,8 @@ export async function memoriesRoutes(app: FastifyInstance) {
        VALUES ($1, 'write', $2, $3)`,
       [req.apiKey.id, session_id, entityKey],
     );
+
+    deliverWebhooks(req.apiKey.id, 'write', { entity_key: entityKey, session_id, agent_id, ttl_tier });
 
     return reply.status(201).send({ entity_key: entityKey, tx_hash: txHash, expires_at: expiresAt.toISOString() });
   });
@@ -148,7 +151,36 @@ export async function memoriesRoutes(app: FastifyInstance) {
       [req.apiKey.id, key],
     );
 
+    deliverWebhooks(req.apiKey.id, 'delete', { entity_key: key });
+
     return reply.status(204).send();
+  });
+
+  // GET /v1/memories — list memory index entries for the authenticated key
+  app.get<{ Querystring: { session_id?: string; limit?: string } }>('/v1/memories', async (req, reply) => {
+    const { session_id, limit: limitStr } = req.query;
+    const limit = Math.min(parseInt(limitStr ?? '100', 10), 100);
+
+    const rows = await db.query<{
+      entity_key: string;
+      session_id: string;
+      agent_id: string | null;
+      ttl_tier: string;
+      created_at: string;
+      expires_at: string;
+    }>(
+      `SELECT entity_key, session_id, agent_id, ttl_tier, created_at, expires_at
+       FROM memory_index
+       WHERE api_key_id = $1
+         AND deleted_at IS NULL
+         AND expires_at > NOW()
+         ${session_id ? 'AND session_id = $3' : ''}
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      session_id ? [req.apiKey.id, limit, session_id] : [req.apiKey.id, limit],
+    );
+
+    return reply.send({ memories: rows.rows });
   });
 
   // POST /v1/memories/recall — query memories in a session (returns all; client filters)

@@ -1,0 +1,651 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import DashboardShell from '../../components/DashboardShell';
+
+/* ─── Syntax highlighter (static content only — no user input) ─────────── */
+function hl(code: string, lang: 'ts' | 'bash' | 'http' = 'ts'): string {
+  let s = code
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  if (lang === 'bash') {
+    s = s
+      .replace(/(#[^\n]*)/g, '<em style="color:#52525b;font-style:normal">$1</em>')
+      .replace(/\b(npm|npx|export|echo|node)\b/g, '<em style="color:#a78bfa;font-style:normal">$1</em>')
+      .replace(/("[^"]*")/g, '<em style="color:#34d399;font-style:normal">$1</em>');
+    return s;
+  }
+
+  if (lang === 'http') {
+    s = s
+      .replace(/^(POST|GET|DELETE|PUT|PATCH)/gm, '<em style="color:#fbbf24;font-style:normal">$1</em>')
+      .replace(/(Authorization|Content-Type):/g, '<em style="color:#38bdf8;font-style:normal">$1</em>:')
+      .replace(/("[^"]*")/g, '<em style="color:#34d399;font-style:normal">$1</em>')
+      .replace(/(Bearer .+)/g, '<em style="color:#a78bfa;font-style:normal">$1</em>');
+    return s;
+  }
+
+  // TypeScript — order matters: comments and strings first, then keywords
+  const PLACEHOLDER = '\x00';
+  const saved: string[] = [];
+
+  // Preserve block comments
+  s = s.replace(/(\/\*[\s\S]*?\*\/)/g, (m) => { saved.push(`<em style="color:#52525b;font-style:normal">${m}</em>`); return PLACEHOLDER + (saved.length - 1) + PLACEHOLDER; });
+  // Preserve line comments
+  s = s.replace(/(\/\/[^\n]*)/g, (m) => { saved.push(`<em style="color:#52525b;font-style:normal">${m}</em>`); return PLACEHOLDER + (saved.length - 1) + PLACEHOLDER; });
+  // Preserve template literals
+  s = s.replace(/(`[^`]*`)/g, (m) => { saved.push(`<em style="color:#34d399;font-style:normal">${m}</em>`); return PLACEHOLDER + (saved.length - 1) + PLACEHOLDER; });
+  // Preserve strings
+  s = s.replace(/('[^'\\]*(?:\\.[^'\\]*)*'|"[^"\\]*(?:\\.[^"\\]*)*")/g, (m) => { saved.push(`<em style="color:#34d399;font-style:normal">${m}</em>`); return PLACEHOLDER + (saved.length - 1) + PLACEHOLDER; });
+
+  // Keywords
+  s = s.replace(/\b(import|export|from|const|let|var|async|await|new|return|if|else|for|of|in|null|undefined|true|false|typeof|void|throw|try|catch)\b/g,
+    '<em style="color:#a78bfa;font-style:normal">$1</em>');
+  // Types and classes (PascalCase)
+  s = s.replace(/\b([A-Z][A-Za-z0-9]+)\b/g, '<em style="color:#38bdf8;font-style:normal">$1</em>');
+  // Numbers
+  s = s.replace(/\b(\d+)\b/g, '<em style="color:#fbbf24;font-style:normal">$1</em>');
+
+  // Restore saved tokens
+  s = s.replace(new RegExp(PLACEHOLDER + '(\\d+)' + PLACEHOLDER, 'g'), (_, i) => saved[parseInt(i)]);
+
+  return s;
+}
+
+/* ─── CodeBlock ─────────────────────────────────────────────────────────── */
+function CodeBlock({ code, lang = 'ts', label }: { code: string; lang?: 'ts' | 'bash' | 'http'; label?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    navigator.clipboard.writeText(code.trim());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const langLabel = label ?? (lang === 'ts' ? 'TypeScript' : lang === 'bash' ? 'Terminal' : 'HTTP');
+
+  return (
+    <div className="rounded-xl overflow-hidden my-4" style={{ background: '#07070f', border: '1px solid rgba(255,255,255,0.08)' }}>
+      {/* toolbar */}
+      <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
+        <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-zinc-600">{langLabel}</span>
+        <button
+          onClick={copy}
+          className="flex items-center gap-1.5 text-[10px] font-bold tracking-[0.1em] uppercase transition-colors focus-visible:ring-2 focus-visible:ring-violet-500 rounded px-2 py-0.5"
+          style={{ color: copied ? '#34d399' : 'rgba(113,113,122,0.7)' }}
+          aria-label="Copy code"
+        >
+          {copied ? (
+            <>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              Copied
+            </>
+          ) : (
+            <>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><rect x="0.5" y="2.5" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M2.5 2.5V1.5a1 1 0 0 1 1-1H8.5a1 1 0 0 1 1 1V7a1 1 0 0 1-1 1H8" stroke="currentColor" strokeWidth="1.2"/></svg>
+              Copy
+            </>
+          )}
+        </button>
+      </div>
+      {/* code */}
+      <pre
+        className="overflow-x-auto px-5 py-4 text-[12.5px] leading-[1.75] font-mono text-zinc-300"
+        dangerouslySetInnerHTML={{ __html: hl(code.trim(), lang) }}
+      />
+    </div>
+  );
+}
+
+/* ─── Section header ────────────────────────────────────────────────────── */
+function Section({ id, title, subtitle, children }: { id: string; title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <section id={id} className="scroll-mt-8 pt-12 first:pt-0">
+      <div className="mb-5 pb-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <h2 className="text-[20px] font-bold text-white tracking-tight">{title}</h2>
+        {subtitle && <p className="text-[12px] text-zinc-500 mt-1">{subtitle}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/* ─── Method card ───────────────────────────────────────────────────────── */
+function Method({ signature, description, params, returns, children }: {
+  signature: string;
+  description: string;
+  params?: { name: string; type: string; desc: string }[];
+  returns?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-10">
+      <div className="rounded-xl px-4 py-3 mb-3 font-mono text-[13px]" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)' }}>
+        <span className="text-violet-300">{signature}</span>
+      </div>
+      <p className="text-[13px] text-zinc-400 leading-relaxed mb-3">{description}</p>
+      {params && params.length > 0 && (
+        <div className="rounded-xl overflow-hidden mb-3" style={{ border: '1px solid rgba(255,255,255,0.07)' }}>
+          <div className="grid px-4 py-2" style={{ gridTemplateColumns: '130px 140px 1fr', borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)' }}>
+            {['Parameter', 'Type', 'Description'].map((h) => (
+              <p key={h} className="text-[9px] font-bold tracking-[0.16em] uppercase text-zinc-600">{h}</p>
+            ))}
+          </div>
+          {params.map((p, i) => (
+            <div key={p.name} className="grid items-start px-4 py-2.5 gap-2" style={{ gridTemplateColumns: '130px 140px 1fr', borderBottom: i < params.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+              <code className="text-[11px] font-mono text-violet-300">{p.name}</code>
+              <code className="text-[11px] font-mono text-sky-400">{p.type}</code>
+              <p className="text-[11px] text-zinc-500 leading-relaxed">{p.desc}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {returns && (
+        <p className="text-[12px] text-zinc-500 mb-3">
+          <span className="font-bold text-zinc-400">Returns: </span>
+          <code className="font-mono text-sky-400 text-[11px]">{returns}</code>
+        </p>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/* ─── Callout ───────────────────────────────────────────────────────────── */
+function Callout({ type = 'info', children }: { type?: 'info' | 'warn' | 'tip'; children: React.ReactNode }) {
+  const cfg = {
+    info: { color: '#38bdf8', bg: 'rgba(56,189,248,0.07)', border: 'rgba(56,189,248,0.2)', icon: 'ℹ' },
+    warn: { color: '#fbbf24', bg: 'rgba(251,191,36,0.07)', border: 'rgba(251,191,36,0.2)', icon: '⚠' },
+    tip:  { color: '#34d399', bg: 'rgba(52,211,153,0.07)', border: 'rgba(52,211,153,0.2)',  icon: '✦' },
+  }[type];
+  return (
+    <div className="flex gap-3 rounded-xl px-4 py-3.5 my-4 text-[12px] leading-relaxed" style={{ background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color }}>
+      <span className="shrink-0 mt-0.5 font-bold">{cfg.icon}</span>
+      <span style={{ color: 'rgba(212,212,216,0.85)' }}>{children}</span>
+    </div>
+  );
+}
+
+/* ─── TOC sections ──────────────────────────────────────────────────────── */
+const TOC = [
+  { id: 'quickstart',   label: 'Quick Start' },
+  { id: 'install',      label: 'Installation' },
+  { id: 'init',         label: 'Initialization' },
+  { id: 'write',        label: 'write()' },
+  { id: 'recall',       label: 'recall()' },
+  { id: 'read',         label: 'read()' },
+  { id: 'delete',       label: 'delete()' },
+  { id: 'usage-method', label: 'usage()' },
+  { id: 'tiers',        label: 'Memory Tiers' },
+  { id: 'encryption',   label: 'Encryption Keys' },
+  { id: 'rest',         label: 'REST API' },
+  { id: 'webhooks',     label: 'Webhooks' },
+];
+
+/* ─── Page ──────────────────────────────────────────────────────────────── */
+export default function DocsPage() {
+  const [active, setActive] = useState('quickstart');
+  const mainRef = useRef<HTMLDivElement>(null);
+
+  // Track which section is visible
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) setActive(e.target.id);
+        }
+      },
+      { rootMargin: '-20% 0px -70% 0px' },
+    );
+    TOC.forEach(({ id }) => {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  function scrollTo(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  return (
+    <DashboardShell>
+      <div className="flex min-h-full">
+
+        {/* ── Sticky TOC ────────────────────────────────────────────── */}
+        <aside className="hidden lg:flex flex-col w-52 shrink-0 sticky top-0 self-start h-screen pt-8 pl-6 pr-4 overflow-y-auto">
+          <p className="text-[9px] font-black tracking-[0.2em] uppercase text-zinc-600 mb-4">On this page</p>
+          <nav className="space-y-0.5">
+            {TOC.map(({ id, label }) => {
+              const isActive = active === id;
+              const isMethod = label.endsWith('()');
+              return (
+                <button
+                  key={id}
+                  onClick={() => scrollTo(id)}
+                  className="w-full text-left px-3 py-1.5 rounded-lg text-[12px] transition-colors focus-visible:ring-2 focus-visible:ring-violet-500"
+                  style={{
+                    color: isActive ? '#c4b5fd' : 'rgba(113,113,122,0.8)',
+                    background: isActive ? 'rgba(124,58,237,0.12)' : 'transparent',
+                    paddingLeft: isMethod ? '20px' : undefined,
+                    fontFamily: isMethod ? 'monospace' : undefined,
+                    fontSize: isMethod ? '11px' : undefined,
+                  }}
+                >
+                  {isActive && <span className="mr-1.5 text-violet-400">›</span>}
+                  {label}
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+
+        {/* ── Main content ──────────────────────────────────────────── */}
+        <main ref={mainRef} className="flex-1 px-8 py-8 max-w-3xl">
+
+          {/* Page header */}
+          <div className="mb-10">
+            <h1 className="text-[26px] font-bold text-white tracking-tight">Documentation</h1>
+            <p className="text-[13px] text-zinc-500 mt-1.5">
+              Everything you need to add encrypted persistent memory to your AI agents.
+            </p>
+          </div>
+
+          {/* ── Quick Start ─────────────────────────────────────────── */}
+          <Section id="quickstart" title="Quick Start" subtitle="From API key to first memory write in under 5 minutes.">
+            <div className="grid grid-cols-1 gap-4 mb-6">
+              {[
+                { step: '1', title: 'Get an API key', desc: 'Go to API Keys → click Create Key. Copy the key — it\'s shown once.' },
+                { step: '2', title: 'Install the SDK', desc: 'npm install @holomem/sdk' },
+                { step: '3', title: 'Write your first memory', desc: 'See the example below.' },
+              ].map((s) => (
+                <div key={s.step} className="flex gap-4 items-start p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                  <div className="w-7 h-7 rounded-lg shrink-0 flex items-center justify-center text-[11px] font-black text-violet-300" style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.25)' }}>
+                    {s.step}
+                  </div>
+                  <div>
+                    <p className="text-[13px] font-bold text-white mb-0.5">{s.title}</p>
+                    <p className="text-[12px] text-zinc-500">{s.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <CodeBlock lang="ts" label="First memory write" code={`
+import { HoloMem } from '@holomem/sdk';
+
+const mem = new HoloMem({
+  apiKey: 'hm_live_your_key_here',
+});
+
+// Write an encrypted memory
+const entityKey = await mem.write(
+  'my-research-session',
+  'The correlation between X and Y is significant at p < 0.01',
+  { ttl: 'episodic' }
+);
+
+console.log('Memory stored:', entityKey);
+
+// Recall all memories from the session
+const memories = await mem.recall('my-research-session');
+memories.forEach((m) => console.log(m.plaintext));
+`} />
+          </Section>
+
+          {/* ── Installation ────────────────────────────────────────── */}
+          <Section id="install" title="Installation">
+            <CodeBlock lang="bash" code={`
+npm install @holomem/sdk
+`} />
+            <p className="text-[13px] text-zinc-400 leading-relaxed">
+              Requires Node.js 18+ or any modern browser environment. The SDK is ESM-first.
+            </p>
+            <Callout type="tip">
+              If you use TypeScript, all methods are fully typed. No <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">@types</code> package needed — types are bundled.
+            </Callout>
+          </Section>
+
+          {/* ── Initialization ──────────────────────────────────────── */}
+          <Section id="init" title="Initialization" subtitle="Create a HoloMem instance once and reuse it across your agent.">
+            <CodeBlock lang="ts" code={`
+import { HoloMem } from '@holomem/sdk';
+
+const mem = new HoloMem({
+  apiKey: process.env.HOLOMEM_API_KEY,
+  encryptionKey: process.env.HOLOMEM_ENCRYPTION_KEY, // optional but recommended
+});
+`} />
+
+            <div className="rounded-xl overflow-hidden my-4" style={{ border: '1px solid rgba(255,255,255,0.07)' }}>
+              <div className="grid px-4 py-2" style={{ gridTemplateColumns: '140px 130px 1fr', borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)' }}>
+                {['Option', 'Type', 'Description'].map((h) => (
+                  <p key={h} className="text-[9px] font-bold tracking-[0.16em] uppercase text-zinc-600">{h}</p>
+                ))}
+              </div>
+              {[
+                { name: 'apiKey', type: 'string', req: true, desc: 'Your HoloMem API key (hm_live_… or hm_test_…).' },
+                { name: 'encryptionKey', type: 'string', req: false, desc: 'Hex-encoded 32-byte private key. If omitted, an ephemeral key is generated — memories cannot be recalled after process restart.' },
+                { name: 'baseUrl', type: 'string', req: false, desc: 'Override the API base URL. Defaults to https://api.holomem.io.' },
+              ].map((p, i, arr) => (
+                <div key={p.name} className="grid items-start px-4 py-3 gap-2" style={{ gridTemplateColumns: '140px 130px 1fr', borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                  <div className="flex items-center gap-1.5">
+                    <code className="text-[11px] font-mono text-violet-300">{p.name}</code>
+                    {p.req && <span className="text-[8px] font-black tracking-wide text-red-400">REQ</span>}
+                  </div>
+                  <code className="text-[11px] font-mono text-sky-400">{p.type}</code>
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">{p.desc}</p>
+                </div>
+              ))}
+            </div>
+
+            <Callout type="warn">
+              Store your <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">encryptionKey</code> in an environment variable, not in source code. Anyone with this key can decrypt your agent's memories.
+            </Callout>
+          </Section>
+
+          {/* ── write() ─────────────────────────────────────────────── */}
+          <Section id="write" title="SDK Reference">
+            <Method
+              signature="mem.write(sessionId, plaintext, opts?)"
+              description="Encrypts plaintext client-side and writes it to the memory mesh. Returns the entity key for later retrieval."
+              params={[
+                { name: 'sessionId', type: 'string', desc: 'Groups memories belonging to the same agent run or conversation thread.' },
+                { name: 'plaintext', type: 'string', desc: 'The raw text to encrypt and store. Never leaves your machine unencrypted.' },
+                { name: 'opts.ttl', type: "'working' | 'episodic' | 'persistent'", desc: "Memory tier controlling expiry. Defaults to 'episodic'." },
+                { name: 'opts.agentId', type: 'string', desc: 'Tag the memory with a specific agent identifier. Useful for multi-agent systems.' },
+              ]}
+              returns="Promise<string> — the entity key"
+            >
+              <CodeBlock lang="ts" code={`
+const key = await mem.write(
+  'session-abc',
+  'Hypothesis: model performance degrades after 48h of inactivity.',
+  { ttl: 'persistent', agentId: 'analyst-01' }
+);
+`} />
+            </Method>
+
+            {/* ── recall() ────────────────────────────────────────────── */}
+            <div id="recall" className="scroll-mt-8">
+              <Method
+                signature="mem.recall(sessionId, opts?)"
+                description="Fetches and decrypts all active memories for a session. Use this to restore context at the start of an agent run."
+                params={[
+                  { name: 'sessionId', type: 'string', desc: 'The session whose memories to retrieve.' },
+                  { name: 'opts.limit', type: 'number', desc: 'Maximum memories to return. Defaults to 20, max 50.' },
+                ]}
+                returns="Promise<Memory[]> — array of { entityKey, agentId, plaintext }"
+              >
+                <CodeBlock lang="ts" code={`
+const memories = await mem.recall('session-abc');
+
+// Reconstruct context for your LLM
+const context = memories.map((m) => m.plaintext).join('\n');
+
+// Example with OpenAI
+const response = await openai.chat.completions.create({
+  model: 'gpt-4o',
+  messages: [
+    { role: 'system', content: 'Prior context:\n' + context },
+    { role: 'user', content: userMessage },
+  ],
+});
+`} />
+              </Method>
+            </div>
+
+            {/* ── read() ──────────────────────────────────────────────── */}
+            <div id="read" className="scroll-mt-8">
+              <Method
+                signature="mem.read(entityKey)"
+                description="Fetches and decrypts a single memory node by its entity key. Returns null if the memory has expired or been deleted."
+                params={[
+                  { name: 'entityKey', type: 'string', desc: 'The key returned by write().' },
+                ]}
+                returns="Promise<string | null>"
+              >
+                <CodeBlock lang="ts" code={`
+const plaintext = await mem.read('ent_7f3a9c...');
+if (plaintext === null) {
+  console.log('Memory expired or not found');
+}
+`} />
+              </Method>
+            </div>
+
+            {/* ── delete() ────────────────────────────────────────────── */}
+            <div id="delete" className="scroll-mt-8">
+              <Method
+                signature="mem.delete(entityKey)"
+                description="Soft-deletes a memory from the index immediately. The on-chain data expires automatically via TTL regardless."
+                params={[
+                  { name: 'entityKey', type: 'string', desc: 'The key returned by write().' },
+                ]}
+                returns="Promise<void>"
+              >
+                <CodeBlock lang="ts" code={`
+await mem.delete('ent_7f3a9c...');
+`} />
+              </Method>
+            </div>
+
+            {/* ── usage() ─────────────────────────────────────────────── */}
+            <div id="usage-method" className="scroll-mt-8">
+              <Method
+                signature="mem.usage()"
+                description="Returns current quota usage for your API key — writes consumed, reads this month, and active memory count."
+                returns="Promise<UsageResponse>"
+              >
+                <CodeBlock lang="ts" code={`
+const stats = await mem.usage();
+console.log(\`\${stats.writes.used} / \${stats.writes.limit} writes used this month\`);
+console.log(\`\${stats.memories.active} active memory nodes\`);
+`} />
+              </Method>
+            </div>
+          </Section>
+
+          {/* ── Memory Tiers ────────────────────────────────────────── */}
+          <Section id="tiers" title="Memory Tiers" subtitle="Choose TTL based on how long the information needs to survive.">
+            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.07)' }}>
+              <div className="grid px-5 py-2.5" style={{ gridTemplateColumns: '120px 80px 1fr', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
+                {['Tier', 'Expires', 'Best for'].map((h) => (
+                  <p key={h} className="text-[9px] font-bold tracking-[0.16em] uppercase text-zinc-600">{h}</p>
+                ))}
+              </div>
+              {[
+                {
+                  name: 'working',
+                  color: '#fbbf24',
+                  bg: 'rgba(251,191,36,0.1)',
+                  border: 'rgba(251,191,36,0.2)',
+                  ttl: '15 min',
+                  use: 'Intermediate steps, draft outputs, tool call scratch space. Auto-purged after the task completes.',
+                },
+                {
+                  name: 'episodic',
+                  color: '#38bdf8',
+                  bg: 'rgba(56,189,248,0.1)',
+                  border: 'rgba(56,189,248,0.2)',
+                  ttl: '1 hour',
+                  use: 'Conversation context, session findings, short-term agent state. Default tier.',
+                },
+                {
+                  name: 'persistent',
+                  color: '#34d399',
+                  bg: 'rgba(52,211,153,0.1)',
+                  border: 'rgba(52,211,153,0.2)',
+                  ttl: '30 days',
+                  use: 'Consolidated reports, cross-session user preferences, long-term knowledge.',
+                },
+              ].map((t, i, arr) => (
+                <div key={t.name} className="grid items-start px-5 py-4 gap-4" style={{ gridTemplateColumns: '120px 80px 1fr', borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold tracking-[0.1em] w-fit" style={{ background: t.bg, border: `1px solid ${t.border}`, color: t.color }}>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: t.color }} />
+                    {t.name}
+                  </span>
+                  <span className="text-[12px] font-mono text-zinc-400">{t.ttl}</span>
+                  <p className="text-[12px] text-zinc-500 leading-relaxed">{t.use}</p>
+                </div>
+              ))}
+            </div>
+          </Section>
+
+          {/* ── Encryption Keys ─────────────────────────────────────── */}
+          <Section id="encryption" title="Encryption Keys" subtitle="HoloMem encrypts all data client-side before any network call.">
+            <p className="text-[13px] text-zinc-400 leading-relaxed mb-4">
+              Every write is encrypted with ECIES (secp256k1) using your <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">encryptionKey</code> before leaving your machine. The API server never sees plaintext.
+            </p>
+
+            <p className="text-[13px] font-semibold text-white mb-2">Generate a key once and save it:</p>
+            <CodeBlock lang="bash" code={`
+# Generate a random 32-byte hex key and save to .env
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# → paste the output into HOLOMEM_ENCRYPTION_KEY in your .env
+`} />
+
+            <p className="text-[13px] font-semibold text-white mb-2">Load from file (recommended for long-running agents):</p>
+            <CodeBlock lang="ts" code={`
+// Write the key to a file on first run
+const mem = new HoloMem({ apiKey: process.env.HOLOMEM_API_KEY });
+mem.saveKey('./agent.key');   // saved with chmod 600
+
+// On subsequent runs, load from file
+const mem = HoloMem.loadKey('./agent.key', {
+  apiKey: process.env.HOLOMEM_API_KEY,
+});
+`} />
+            <Callout type="warn">
+              If you lose your <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">encryptionKey</code>, existing memories are unrecoverable — there is no server-side key escrow. Back it up in a secrets manager.
+            </Callout>
+          </Section>
+
+          {/* ── REST API ────────────────────────────────────────────── */}
+          <Section id="rest" title="REST API" subtitle="Use the HTTP API directly if you're not using the TypeScript SDK.">
+            <p className="text-[13px] text-zinc-400 leading-relaxed mb-4">
+              All requests require <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">Authorization: Bearer &lt;api_key&gt;</code>. The base URL is <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">https://api.holomem.io</code>.
+            </p>
+
+            <p className="text-[13px] font-semibold text-white mb-1">Write a memory</p>
+            <CodeBlock lang="http" code={`
+POST /v1/memories
+Authorization: Bearer hm_live_your_key
+Content-Type: application/json
+
+{
+  "session_id": "my-session",
+  "ciphertext": "<ecies_encrypted_hex>",
+  "ttl_tier": "episodic",
+  "agent_id": "agent-01"
+}
+
+// Response 201
+{
+  "entity_key": "ent_7f3a9c...",
+  "tx_hash": "0xabcd...",
+  "expires_at": "2026-05-22T14:30:00Z"
+}
+`} />
+
+            <p className="text-[13px] font-semibold text-white mb-1">Recall all session memories</p>
+            <CodeBlock lang="http" code={`
+POST /v1/memories/recall
+Authorization: Bearer hm_live_your_key
+Content-Type: application/json
+
+{ "session_id": "my-session", "limit": 20 }
+
+// Response 200
+{
+  "session_id": "my-session",
+  "memories": [
+    { "entity_key": "ent_7f3a9c...", "agent_id": "agent-01", "ciphertext": "..." }
+  ]
+}
+`} />
+
+            <p className="text-[13px] font-semibold text-white mb-1">Delete a memory</p>
+            <CodeBlock lang="http" code={`
+DELETE /v1/memories/ent_7f3a9c...
+Authorization: Bearer hm_live_your_key
+
+// Response 204 No Content
+`} />
+
+            <p className="text-[13px] font-semibold text-white mb-1">Check usage</p>
+            <CodeBlock lang="http" code={`
+GET /v1/usage
+Authorization: Bearer hm_live_your_key
+
+// Response 200
+{
+  "tier": "pro",
+  "writes": { "used": 1042, "limit": 50000, "remaining": 48958, "resets_at": "2026-06-01T00:00:00Z" },
+  "reads": { "this_month": 3210 },
+  "memories": { "active": 87 }
+}
+`} />
+          </Section>
+
+          {/* ── Webhooks ────────────────────────────────────────────── */}
+          <Section id="webhooks" title="Webhooks" subtitle="Get notified in real time when your agents write, read, or delete memories.">
+            <p className="text-[13px] text-zinc-400 leading-relaxed mb-4">
+              Register an endpoint in <strong className="text-white font-semibold">Security Logs</strong> in the dashboard. HoloMem will POST a JSON payload to your URL whenever a subscribed event occurs.
+            </p>
+
+            <p className="text-[13px] font-semibold text-white mb-1">Example payload (write event)</p>
+            <CodeBlock lang="ts" label="JSON Payload" code={`
+{
+  "event": "write",
+  "entity_key": "ent_7f3a9c...",
+  "session_id": "my-session",
+  "agent_id": "agent-01",
+  "ttl_tier": "episodic",
+  "timestamp": "2026-05-22T10:41:00Z"
+}
+`} />
+
+            <p className="text-[13px] font-semibold text-white mb-1">Verify the signature</p>
+            <CodeBlock lang="ts" code={`
+import { createHmac } from 'crypto';
+
+function verifyHoloMemSignature(
+  payload: string,
+  signature: string,
+  secret: string,
+): boolean {
+  const expected = createHmac('sha256', secret)
+    .update(payload)
+    .digest('hex');
+  return expected === signature;
+}
+
+// In your webhook handler (Express example):
+app.post('/webhook', (req, res) => {
+  const sig = req.headers['x-holomem-signature'];
+  const raw = JSON.stringify(req.body);
+
+  if (!verifyHoloMemSignature(raw, sig, process.env.HOLOMEM_WEBHOOK_SECRET)) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  // Process the event
+  console.log('Event received:', req.body.event);
+  res.status(200).send('ok');
+});
+`} />
+
+            <Callout type="info">
+              Your endpoint must respond with HTTP 2xx within 10 seconds. Failed deliveries are visible in the Security Logs tab — you can replay them from there.
+            </Callout>
+          </Section>
+
+          <div className="h-16" aria-hidden="true" />
+        </main>
+      </div>
+    </DashboardShell>
+  );
+}

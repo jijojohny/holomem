@@ -46,3 +46,25 @@ CREATE TABLE IF NOT EXISTS memory_index (
 
 CREATE INDEX IF NOT EXISTS memory_index_session_idx
   ON memory_index (api_key_id, session_id) WHERE deleted_at IS NULL;
+
+-- Webhook endpoints registered by customers
+CREATE TABLE IF NOT EXISTS webhooks (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  api_key_id  UUID NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+  url         TEXT NOT NULL,
+  events      TEXT[] NOT NULL DEFAULT ARRAY['write','delete']::TEXT[],
+  active      BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  webhook_id  UUID NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+  event_type  TEXT NOT NULL,
+  status_code INTEGER,
+  error       TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS webhook_deliveries_idx
+  ON webhook_deliveries (webhook_id, created_at DESC);

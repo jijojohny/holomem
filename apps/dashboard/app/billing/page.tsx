@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Nav from '../../components/Nav';
+import DashboardShell from '../../components/DashboardShell';
 import { apiGet, apiPost, AuthError, type Usage } from '../../lib/api';
 import { useRequireAuth } from '../../lib/auth';
+import { useToast } from '../../components/Toast';
 
 const PLANS = [
   {
@@ -39,6 +40,7 @@ const PLANS = [
 export default function BillingPage() {
   useRequireAuth();
   const router = useRouter();
+  const { toast } = useToast();
   const [usage, setUsage] = useState<Usage | null>(null);
   const [loading, setLoading] = useState<string>('');
 
@@ -54,7 +56,7 @@ export default function BillingPage() {
       const result = await apiPost<{ checkout_url: string }>('/v1/billing/checkout', { tier });
       window.location.href = result.checkout_url;
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Upgrade failed');
+      toast(e instanceof Error ? e.message : 'Upgrade failed', 'error');
     } finally {
       setLoading('');
     }
@@ -66,7 +68,7 @@ export default function BillingPage() {
       const result = await apiPost<{ portal_url: string }>('/v1/billing/portal');
       window.location.href = result.portal_url;
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Could not open billing portal');
+      toast(e instanceof Error ? e.message : 'Could not open billing portal', 'error');
     } finally {
       setLoading('');
     }
@@ -76,8 +78,7 @@ export default function BillingPage() {
   const isPaid = currentTier !== 'free';
 
   return (
-    <div className="min-h-screen">
-      <Nav />
+    <DashboardShell>
       <main className="max-w-3xl mx-auto px-6 py-10 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold">Billing</h1>
@@ -144,6 +145,6 @@ export default function BillingPage() {
           Payments processed by Stripe · Cancel anytime · Enterprise plans available — contact us
         </p>
       </main>
-    </div>
+  </DashboardShell>
   );
 }

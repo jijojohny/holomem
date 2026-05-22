@@ -5,10 +5,15 @@ dist/
 packages/*/dist/
 apps/*/dist/
 
+# Next.js
+apps/dashboard/.next/
+apps/dashboard/out/
+
 # TypeScript generated files
 *.js.map
 *.d.ts
 *.d.ts.map
+*.tsbuildinfo
 
 # Secrets
 .env
