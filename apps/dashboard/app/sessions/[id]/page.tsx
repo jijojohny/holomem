@@ -64,6 +64,7 @@ export default function SessionDetailPage() {
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [deletingSession, setDeletingSession] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,6 +81,25 @@ export default function SessionDetailPage() {
   }, [sessionId, router]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function deleteSession() {
+    const ok = await confirm({
+      title: 'Delete entire session?',
+      body: `This will soft-delete all ${memories.length} memory node${memories.length !== 1 ? 's' : ''} in "${sessionId}". On-chain data expires via TTL.`,
+      confirm: 'Delete session',
+      danger: true,
+    });
+    if (!ok) return;
+    setDeletingSession(true);
+    try {
+      await apiDelete(`/v1/sessions/${encodeURIComponent(sessionId)}`);
+      toast(`Session deleted — ${memories.length} node${memories.length !== 1 ? 's' : ''} removed`, 'success');
+      router.replace('/sessions');
+    } catch {
+      toast('Failed to delete session', 'error');
+      setDeletingSession(false);
+    }
+  }
 
   async function deleteMemory(key: string) {
     const ok = await confirm({
@@ -132,17 +152,39 @@ export default function SessionDetailPage() {
             <h1 className="text-[22px] font-bold text-white tracking-tight">Session Detail</h1>
             <p className="text-[11px] font-mono text-zinc-600 mt-1 tracking-wide">{sessionId}</p>
           </div>
-          <button
-            onClick={load}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-bold tracking-[0.1em] uppercase text-zinc-400 hover:text-zinc-200 transition-colors focus-visible:ring-2 focus-visible:ring-violet-500"
-            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
-            aria-label="Refresh"
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M10 6A4 4 0 1 1 6 2M6 2l2-2M6 2l2 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={load}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-bold tracking-[0.1em] uppercase text-zinc-400 hover:text-zinc-200 transition-colors focus-visible:ring-2 focus-visible:ring-violet-500"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+              aria-label="Refresh"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <path d="M10 6A4 4 0 1 1 6 2M6 2l2-2M6 2l2 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Refresh
+            </button>
+            {!loading && memories.length > 0 && (
+              <button
+                onClick={deleteSession}
+                disabled={deletingSession}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-bold tracking-[0.1em] uppercase transition-colors focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-40"
+                style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', color: '#f87171' }}
+                aria-label="Delete session"
+              >
+                {deletingSession ? (
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="animate-spin" aria-hidden="true">
+                    <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4" strokeDasharray="14 7"/>
+                  </svg>
+                ) : (
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M2 3h8M4.5 3V2h3v1M5 5.5v3M7 5.5v3M3 3l.5 7h5l.5-7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                )}
+                Delete Session
+              </button>
+            )}
+          </div>
         </div>
 
         {/* ── Stat mini-cards ─────────────────────────────────────── */}

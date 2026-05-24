@@ -47,6 +47,14 @@ export async function apiDelete(path: string): Promise<void> {
   if (!res.ok && res.status !== 404) throw new Error(`API ${res.status}`);
 }
 
+export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
+  const res = await apiFetch(path, { method: 'PATCH', body: JSON.stringify(body) });
+  if (res.status === 401) throw new AuthError();
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? `API ${res.status}`);
+  return json as T;
+}
+
 export class AuthError extends Error {
   constructor() { super('Not authenticated'); }
 }
@@ -82,6 +90,7 @@ export interface MemoryEntry {
   ttl_tier: 'working' | 'episodic' | 'persistent';
   created_at: string;
   expires_at: string;
+  pinned: boolean;
 }
 
 export interface DayUsage {
@@ -117,4 +126,18 @@ export interface ActivityEvent {
   session_id: string | null;
   entity_key: string | null;
   created_at: string;
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  role: string;
+  created_at: string;
+}
+
+export interface TeamMember {
+  customer_id: string;
+  email: string;
+  role: string;
+  joined_at: string;
 }

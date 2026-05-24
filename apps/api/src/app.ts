@@ -11,6 +11,7 @@ import { sessionsRoutes } from './routes/sessions.js';
 import { billingRoutes } from './routes/billing.js';
 import { webhooksRoutes } from './routes/webhooks.js';
 import { authRoutes } from './routes/auth.js';
+import { teamsRoutes } from './routes/teams.js';
 
 export function buildApp() {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
@@ -54,6 +55,7 @@ export function buildApp() {
   app.register(billingRoutes);
   app.register(webhooksRoutes);
   app.register(authRoutes);
+  app.register(teamsRoutes);
 
   app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
 

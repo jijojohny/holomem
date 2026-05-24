@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import DashboardShell from '../../components/DashboardShell';
-import { apiGet, apiDelete, AuthError, type MemoryEntry } from '../../lib/api';
+import { apiGet, apiDelete, apiPatch, AuthError, type MemoryEntry } from '../../lib/api';
 import { useRequireAuth } from '../../lib/auth';
 import { useToast } from '../../components/Toast';
 
@@ -85,11 +85,12 @@ function RowSkeleton() {
   return (
     <div
       className="grid items-center px-5 py-3.5 gap-4 animate-pulse"
-      style={{ gridTemplateColumns: '1.8fr 1.2fr 1fr 1fr 1fr 1.2fr 44px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+      style={{ gridTemplateColumns: '1.8fr 1.2fr 1fr 1fr 1fr 1.2fr 44px 44px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
     >
       {[90, 70, 60, 65, 45, 80].map((w, i) => (
         <div key={i} className="h-3 rounded" style={{ width: `${w}%`, background: 'rgba(255,255,255,0.05)' }} />
       ))}
+      <div className="h-5 w-8 rounded bg-white/[0.03] justify-self-end" />
       <div className="h-5 w-8 rounded bg-white/[0.03] justify-self-end" />
     </div>
   );
@@ -111,17 +112,22 @@ function MemoriesContent() {
   const { toast, confirm } = useToast();
 
   const sessionFilter = params.get('session_id') ?? '';
+  const agentFilterParam = params.get('agent_id') ?? '';
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [sessionInput, setSessionInput] = useState(sessionFilter);
-  const [agentFilter, setAgentFilter] = useState('');
+  const [agentInput, setAgentInput] = useState(agentFilterParam);
   const [tierFilter, setTierFilter] = useState<TierFilter>('all');
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [pinning, setPinning] = useState<string | null>(null);
 
-  const load = useCallback(async (sid: string) => {
+  const load = useCallback(async (sid: string, aid: string) => {
     setLoading(true);
     try {
-      const url = sid ? `/v1/memories?session_id=${encodeURIComponent(sid)}` : '/v1/memories';
+      const qs = new URLSearchParams();
+      if (sid) qs.set('session_id', sid);
+      if (aid) qs.set('agent_id', aid);
+      const url = `/v1/memories${qs.toString() ? `?${qs.toString()}` : ''}`;
       const data = await apiGet<{ memories: MemoryEntry[] }>(url);
       setMemories(data.memories);
     } catch (e) {
@@ -131,20 +137,23 @@ function MemoriesContent() {
     }
   }, [router]);
 
-  useEffect(() => { load(sessionFilter); }, [sessionFilter, load]);
+  useEffect(() => { load(sessionFilter, agentFilterParam); }, [sessionFilter, agentFilterParam, load]);
 
   function applyFilter() {
-    const q = sessionInput.trim();
-    router.push(q ? `/memories?session_id=${encodeURIComponent(q)}` : '/memories');
+    const sid = sessionInput.trim();
+    const aid = agentInput.trim();
+    const qs = new URLSearchParams();
+    if (sid) qs.set('session_id', sid);
+    if (aid) qs.set('agent_id', aid);
+    router.push(qs.toString() ? `/memories?${qs.toString()}` : '/memories');
   }
 
   const displayed = useMemo(() => {
     return memories.filter((m) => {
       if (tierFilter !== 'all' && m.ttl_tier !== tierFilter) return false;
-      if (agentFilter && !(m.agent_id ?? '').toLowerCase().includes(agentFilter.toLowerCase())) return false;
       return true;
     });
-  }, [memories, tierFilter, agentFilter]);
+  }, [memories, tierFilter]);
 
   async function deleteMemory(key: string) {
     const ok = await confirm({
@@ -166,14 +175,27 @@ function MemoriesContent() {
     }
   }
 
+  async function togglePin(key: string, currentlyPinned: boolean) {
+    setPinning(key);
+    try {
+      const result = await apiPatch<{ entity_key: string; pinned: boolean }>(`/v1/memories/${key}`, { pinned: !currentlyPinned });
+      setMemories((m) => m.map((x) => x.entity_key === key ? { ...x, pinned: result.pinned } : x));
+      toast(result.pinned ? 'Memory pinned' : 'Memory unpinned', 'success');
+    } catch {
+      toast('Failed to update pin', 'error');
+    } finally {
+      setPinning(null);
+    }
+  }
+
   function clearAll() {
     setSessionInput('');
-    setAgentFilter('');
+    setAgentInput('');
     setTierFilter('all');
     router.push('/memories');
   }
 
-  const hasActiveFilter = sessionFilter || agentFilter || tierFilter !== 'all';
+  const hasActiveFilter = sessionFilter || agentFilterParam || tierFilter !== 'all';
   const tierCounts = useMemo(() => memories.reduce<Record<string, number>>((a, m) => {
     a[m.ttl_tier] = (a[m.ttl_tier] ?? 0) + 1;
     return a;
@@ -193,7 +215,7 @@ function MemoriesContent() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => load(sessionFilter)}
+              onClick={() => load(sessionFilter, agentFilterParam)}
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-bold tracking-[0.1em] uppercase text-zinc-400 hover:text-zinc-200 transition-colors focus-visible:ring-2 focus-visible:ring-violet-500"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
               aria-label="Refresh"
@@ -300,8 +322,9 @@ function MemoriesContent() {
               </svg>
               <input
                 type="text"
-                value={agentFilter}
-                onChange={(e) => setAgentFilter(e.target.value)}
+                value={agentInput}
+                onChange={(e) => setAgentInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && applyFilter()}
                 placeholder="AGENT ID..."
                 className="flex-1 bg-transparent text-[11px] font-semibold tracking-[0.08em] text-zinc-300 placeholder-zinc-700 focus:outline-none"
                 aria-label="Filter by agent"
@@ -389,10 +412,10 @@ function MemoriesContent() {
           {!loading && displayed.length > 0 && (
             <div
               className="grid items-center px-5 py-2.5 gap-4"
-              style={{ gridTemplateColumns: '1.8fr 1.2fr 1fr 1fr 1fr 1.2fr 44px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+              style={{ gridTemplateColumns: '1.8fr 1.2fr 1fr 1fr 1fr 1.2fr 44px 44px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
             >
-              {['ENTITY KEY', 'SESSION', 'AGENT', 'TIER', 'TTL LEFT', 'CREATED', ''].map((h) => (
-                <p key={h} className="text-[9px] font-bold tracking-[0.18em] uppercase text-zinc-600">{h}</p>
+              {['ENTITY KEY', 'SESSION', 'AGENT', 'TIER', 'TTL LEFT', 'CREATED', '', ''].map((h, i) => (
+                <p key={i} className="text-[9px] font-bold tracking-[0.18em] uppercase text-zinc-600">{h}</p>
               ))}
             </div>
           )}
@@ -401,9 +424,9 @@ function MemoriesContent() {
           {loading && (
             <div>
               <div className="px-5 py-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                <div className="grid gap-4" style={{ gridTemplateColumns: '1.8fr 1.2fr 1fr 1fr 1fr 1.2fr 44px' }}>
-                  {['ENTITY KEY', 'SESSION', 'AGENT', 'TIER', 'TTL LEFT', 'CREATED', ''].map((h) => (
-                    <p key={h} className="text-[9px] font-bold tracking-[0.18em] uppercase text-zinc-600">{h}</p>
+                <div className="grid gap-4" style={{ gridTemplateColumns: '1.8fr 1.2fr 1fr 1fr 1fr 1.2fr 44px 44px' }}>
+                  {['ENTITY KEY', 'SESSION', 'AGENT', 'TIER', 'TTL LEFT', 'CREATED', '', ''].map((h, i) => (
+                    <p key={i} className="text-[9px] font-bold tracking-[0.18em] uppercase text-zinc-600">{h}</p>
                   ))}
                 </div>
               </div>
@@ -448,7 +471,7 @@ function MemoriesContent() {
               <div
                 key={m.entity_key}
                 className="grid items-center px-5 py-3 gap-4 group transition-colors hover:bg-white/[0.02]"
-                style={{ gridTemplateColumns: '1.8fr 1.2fr 1fr 1fr 1fr 1.2fr 44px', borderBottom: '1px solid rgba(255,255,255,0.035)' }}
+                style={{ gridTemplateColumns: '1.8fr 1.2fr 1fr 1fr 1fr 1.2fr 44px 44px', borderBottom: '1px solid rgba(255,255,255,0.035)' }}
               >
                 {/* Entity key */}
                 <div className="flex items-center gap-2 min-w-0">
@@ -503,6 +526,26 @@ function MemoriesContent() {
 
                 {/* Created */}
                 <span className="text-[10px] text-zinc-600 font-mono">{formatDate(m.created_at)}</span>
+
+                {/* Pin */}
+                <button
+                  onClick={() => togglePin(m.entity_key, m.pinned)}
+                  disabled={pinning === m.entity_key}
+                  className={`justify-self-end transition-all w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-30 focus-visible:ring-2 focus-visible:ring-violet-500 ${m.pinned ? 'text-violet-400 opacity-100' : 'opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-violet-400 hover:bg-violet-500/10'}`}
+                  aria-label={m.pinned ? `Unpin memory ${m.entity_key}` : `Pin memory ${m.entity_key}`}
+                  title={m.pinned ? 'Pinned — click to unpin' : 'Pin to prevent TTL expiry'}
+                >
+                  {pinning === m.entity_key ? (
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="animate-spin" aria-hidden="true">
+                      <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.5" strokeDasharray="14 7"/>
+                    </svg>
+                  ) : (
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M7 1L11 5L9 7L7 5L4 8L2 9L3 7L6 4L4 2L7 1Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill={m.pinned ? 'currentColor' : 'none'}/>
+                      <path d="M2 10L4 8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                    </svg>
+                  )}
+                </button>
 
                 {/* Delete */}
                 <button

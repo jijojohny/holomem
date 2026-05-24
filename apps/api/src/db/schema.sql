@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS customers (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email              TEXT UNIQUE NOT NULL,
@@ -44,8 +46,38 @@ CREATE TABLE IF NOT EXISTS memory_index (
   deleted_at   TIMESTAMPTZ
 );
 
+ALTER TABLE memory_index ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE memory_index ADD COLUMN IF NOT EXISTS embedding vector(1536);
+
 CREATE INDEX IF NOT EXISTS memory_index_session_idx
   ON memory_index (api_key_id, session_id) WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS memory_index_agent_idx
+  ON memory_index (api_key_id, agent_id) WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS memory_index_embedding_idx
+  ON memory_index USING hnsw (embedding vector_cosine_ops)
+  WHERE deleted_at IS NULL AND embedding IS NOT NULL;
+
+-- Team accounts (light version — shared quota, no invite flow needed)
+CREATE TABLE IF NOT EXISTS teams (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name              TEXT NOT NULL,
+  owner_customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS team_members (
+  team_id     UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  role        TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'member')),
+  joined_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (team_id, customer_id)
+);
+
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES teams(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS api_keys_team_idx ON api_keys (team_id) WHERE team_id IS NOT NULL;
 
 -- Webhook endpoints registered by customers
 CREATE TABLE IF NOT EXISTS webhooks (

@@ -11,6 +11,15 @@ interface WriteBody {
   ciphertext: string;
   ttl_tier?: TtlTier;
   agent_id?: string;
+  embedding?: number[];
+}
+
+interface SearchBody {
+  embedding: number[];
+  session_id?: string;
+  agent_id?: string;
+  limit?: number;
+  threshold?: number;
 }
 
 interface RecallBody {
@@ -21,7 +30,7 @@ interface RecallBody {
 export async function memoriesRoutes(app: FastifyInstance) {
   // POST /v1/memories — write an encrypted memory to Arkiv
   app.post<{ Body: WriteBody }>('/v1/memories', async (req, reply) => {
-    const { session_id, ciphertext, ttl_tier = 'episodic', agent_id } = req.body;
+    const { session_id, ciphertext, ttl_tier = 'episodic', agent_id, embedding } = req.body;
 
     if (!session_id || typeof session_id !== 'string') {
       return reply.status(400).send({ error: 'session_id is required' });
@@ -43,10 +52,11 @@ export async function memoriesRoutes(app: FastifyInstance) {
     const ttlSeconds = TTL_SECONDS[ttl_tier];
     const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
 
+    const embeddingValue = embedding ? `[${embedding.join(',')}]` : null;
     await db.query(
-      `INSERT INTO memory_index (entity_key, api_key_id, session_id, agent_id, ttl_tier, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [entityKey, req.apiKey.id, session_id, agent_id ?? 'sdk', ttl_tier, expiresAt.toISOString()],
+      `INSERT INTO memory_index (entity_key, api_key_id, session_id, agent_id, ttl_tier, expires_at, embedding)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [entityKey, req.apiKey.id, session_id, agent_id ?? 'sdk', ttl_tier, expiresAt.toISOString(), embeddingValue],
     );
 
     await db.query(
@@ -66,7 +76,7 @@ export async function memoriesRoutes(app: FastifyInstance) {
 
     const indexRow = await db.query(
       `SELECT entity_key FROM memory_index
-       WHERE entity_key = $1 AND api_key_id = $2 AND deleted_at IS NULL AND expires_at > NOW()`,
+       WHERE entity_key = $1 AND api_key_id = $2 AND deleted_at IS NULL AND (pinned = TRUE OR expires_at > NOW())`,
       [key, req.apiKey.id],
     );
     if (indexRow.rowCount === 0) {
@@ -99,8 +109,8 @@ export async function memoriesRoutes(app: FastifyInstance) {
 
     const indexRows = await db.query(
       `SELECT entity_key FROM memory_index
-       WHERE session_id = $1 AND api_key_id = $2 AND deleted_at IS NULL AND expires_at > NOW()
-       ORDER BY created_at DESC
+       WHERE session_id = $1 AND api_key_id = $2 AND deleted_at IS NULL AND (pinned = TRUE OR expires_at > NOW())
+       ORDER BY pinned DESC, created_at DESC
        LIMIT $3`,
       [sessionId, req.apiKey.id, limit],
     );
@@ -157,9 +167,25 @@ export async function memoriesRoutes(app: FastifyInstance) {
   });
 
   // GET /v1/memories — list memory index entries for the authenticated key
-  app.get<{ Querystring: { session_id?: string; limit?: string } }>('/v1/memories', async (req, reply) => {
-    const { session_id, limit: limitStr } = req.query;
+  app.get<{ Querystring: { session_id?: string; agent_id?: string; limit?: string } }>('/v1/memories', async (req, reply) => {
+    const { session_id, agent_id, limit: limitStr } = req.query;
     const limit = Math.min(parseInt(limitStr ?? '100', 10), 100);
+
+    const conditions: string[] = [
+      'api_key_id = $1',
+      'deleted_at IS NULL',
+      '(pinned = TRUE OR expires_at > NOW())',
+    ];
+    const params: unknown[] = [req.apiKey.id, limit];
+
+    if (session_id) {
+      conditions.push(`session_id = $${params.length + 1}`);
+      params.push(session_id);
+    }
+    if (agent_id) {
+      conditions.push(`agent_id = $${params.length + 1}`);
+      params.push(agent_id);
+    }
 
     const rows = await db.query<{
       entity_key: string;
@@ -168,19 +194,123 @@ export async function memoriesRoutes(app: FastifyInstance) {
       ttl_tier: string;
       created_at: string;
       expires_at: string;
+      pinned: boolean;
     }>(
-      `SELECT entity_key, session_id, agent_id, ttl_tier, created_at, expires_at
+      `SELECT entity_key, session_id, agent_id, ttl_tier, created_at, expires_at, pinned
        FROM memory_index
-       WHERE api_key_id = $1
-         AND deleted_at IS NULL
-         AND expires_at > NOW()
-         ${session_id ? 'AND session_id = $3' : ''}
-       ORDER BY created_at DESC
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY pinned DESC, created_at DESC
        LIMIT $2`,
-      session_id ? [req.apiKey.id, limit, session_id] : [req.apiKey.id, limit],
+      params,
     );
 
     return reply.send({ memories: rows.rows });
+  });
+
+  // PATCH /v1/memories/:key — pin or unpin a memory node
+  app.patch<{ Params: { key: string }; Body: { pinned: boolean } }>('/v1/memories/:key', async (req, reply) => {
+    const { key } = req.params;
+    const { pinned } = req.body;
+
+    if (typeof pinned !== 'boolean') {
+      return reply.status(400).send({ error: 'pinned must be a boolean' });
+    }
+
+    const result = await db.query<{ entity_key: string; pinned: boolean }>(
+      `UPDATE memory_index
+       SET pinned = $1
+       WHERE entity_key = $2 AND api_key_id = $3 AND deleted_at IS NULL
+       RETURNING entity_key, pinned`,
+      [pinned, key, req.apiKey.id],
+    );
+
+    if (result.rowCount === 0) {
+      return reply.status(404).send({ error: 'memory not found' });
+    }
+
+    return reply.send({ entity_key: result.rows[0].entity_key, pinned: result.rows[0].pinned });
+  });
+
+  // POST /v1/memories/search — vector similarity search (embeddings computed client-side)
+  app.post<{ Body: SearchBody }>('/v1/memories/search', async (req, reply) => {
+    const { embedding, session_id, agent_id, limit = 10, threshold = 0.7 } = req.body;
+
+    if (!Array.isArray(embedding) || embedding.length === 0) {
+      return reply.status(400).send({ error: 'embedding array is required' });
+    }
+
+    const conditions: string[] = [
+      'api_key_id = $1',
+      'deleted_at IS NULL',
+      '(pinned = TRUE OR expires_at > NOW())',
+      'embedding IS NOT NULL',
+      `(1 - (embedding <=> $2::vector)) >= ${threshold}`,
+    ];
+    const params: unknown[] = [req.apiKey.id, `[${embedding.join(',')}]`, Math.min(limit, 50)];
+
+    if (session_id) {
+      conditions.push(`session_id = $${params.length + 1}`);
+      params.push(session_id);
+    }
+    if (agent_id) {
+      conditions.push(`agent_id = $${params.length + 1}`);
+      params.push(agent_id);
+    }
+
+    const rows = await db.query<{
+      entity_key: string;
+      session_id: string;
+      agent_id: string | null;
+      ttl_tier: string;
+      created_at: string;
+      expires_at: string;
+      pinned: boolean;
+      score: number;
+    }>(
+      `SELECT entity_key, session_id, agent_id, ttl_tier, created_at, expires_at, pinned,
+              (1 - (embedding <=> $2::vector)) AS score
+       FROM memory_index
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY embedding <=> $2::vector
+       LIMIT $3`,
+      params,
+    );
+
+    if (rows.rowCount === 0) {
+      return reply.send({ memories: [] });
+    }
+
+    const entityKeys = rows.rows.map((r) => r.entity_key);
+    const allMemories = await listSessionMemories(session_id ?? '');
+    const memMap = new Map(allMemories.map((m) => [m.entityKey, m]));
+
+    // For cross-session search, fetch each memory individually in parallel
+    const ciphertextMap = new Map<string, string>();
+    await Promise.all(
+      entityKeys.map(async (key) => {
+        const mem = memMap.get(key);
+        if (mem?.ciphertext) {
+          ciphertextMap.set(key, mem.ciphertext);
+        } else {
+          const fetched = await readMemory(key);
+          if (fetched?.ciphertext) ciphertextMap.set(key, fetched.ciphertext);
+        }
+      }),
+    );
+
+    return reply.send({
+      memories: rows.rows.map((r) => ({
+        entity_key: r.entity_key,
+        session_id: r.session_id,
+        agent_id: r.agent_id,
+        ttl_tier: r.ttl_tier,
+        created_at: r.created_at,
+        expires_at: r.expires_at,
+        pinned: r.pinned,
+        score: r.score,
+        ciphertext: ciphertextMap.get(r.entity_key) ?? null,
+      })),
+    });
   });
 
   // POST /v1/memories/recall — query memories in a session (returns all; client filters)
@@ -193,8 +323,8 @@ export async function memoriesRoutes(app: FastifyInstance) {
 
     const indexRows = await db.query(
       `SELECT entity_key FROM memory_index
-       WHERE session_id = $1 AND api_key_id = $2 AND deleted_at IS NULL AND expires_at > NOW()
-       ORDER BY created_at DESC
+       WHERE session_id = $1 AND api_key_id = $2 AND deleted_at IS NULL AND (pinned = TRUE OR expires_at > NOW())
+       ORDER BY pinned DESC, created_at DESC
        LIMIT $3`,
       [session_id, req.apiKey.id, Math.min(limit, 50)],
     );

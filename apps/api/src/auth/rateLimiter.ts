@@ -18,16 +18,37 @@ export function registerRateLimiter(app: FastifyInstance) {
     const limit = MONTHLY_WRITE_LIMITS[req.apiKey.tier];
     if (limit === Infinity) return;
 
-    const result = await db.query<{ count: string }>(
-      `SELECT COUNT(*) AS count
-       FROM usage_events
-       WHERE api_key_id = $1
-         AND event_type = 'write'
-         AND created_at >= date_trunc('month', NOW())`,
+    // For team keys, pool quota across all keys in the same team
+    const teamRow = await db.query<{ team_id: string | null }>(
+      `SELECT team_id FROM api_keys WHERE id = $1`,
       [req.apiKey.id],
     );
+    const teamId = teamRow.rows[0]?.team_id;
 
-    const used = parseInt(result.rows[0].count, 10);
+    let used: number;
+    if (teamId) {
+      const result = await db.query<{ count: string }>(
+        `SELECT COUNT(*) AS count
+         FROM usage_events ue
+         JOIN api_keys ak ON ak.id = ue.api_key_id
+         WHERE ak.team_id = $1
+           AND ue.event_type = 'write'
+           AND ue.created_at >= date_trunc('month', NOW())`,
+        [teamId],
+      );
+      used = parseInt(result.rows[0].count, 10);
+    } else {
+      const result = await db.query<{ count: string }>(
+        `SELECT COUNT(*) AS count
+         FROM usage_events
+         WHERE api_key_id = $1
+           AND event_type = 'write'
+           AND created_at >= date_trunc('month', NOW())`,
+        [req.apiKey.id],
+      );
+      used = parseInt(result.rows[0].count, 10);
+    }
+
     if (used >= limit) {
       return reply.status(429).send({
         error: 'Monthly write quota exceeded',

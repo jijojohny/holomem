@@ -170,18 +170,23 @@ function Callout({ type = 'info', children }: { type?: 'info' | 'warn' | 'tip'; 
 
 /* ─── TOC sections ──────────────────────────────────────────────────────── */
 const TOC = [
-  { id: 'quickstart',   label: 'Quick Start' },
-  { id: 'install',      label: 'Installation' },
-  { id: 'init',         label: 'Initialization' },
-  { id: 'write',        label: 'write()' },
-  { id: 'recall',       label: 'recall()' },
-  { id: 'read',         label: 'read()' },
-  { id: 'delete',       label: 'delete()' },
-  { id: 'usage-method', label: 'usage()' },
-  { id: 'tiers',        label: 'Memory Tiers' },
-  { id: 'encryption',   label: 'Encryption Keys' },
-  { id: 'rest',         label: 'REST API' },
-  { id: 'webhooks',     label: 'Webhooks' },
+  { id: 'quickstart',    label: 'Quick Start' },
+  { id: 'install',       label: 'Installation' },
+  { id: 'init',          label: 'Initialization' },
+  { id: 'write',         label: 'write()' },
+  { id: 'recall',        label: 'recall()' },
+  { id: 'read',          label: 'read()' },
+  { id: 'delete',        label: 'delete()' },
+  { id: 'write-many',    label: 'writeMany()' },
+  { id: 'list-memories', label: 'listMemories()' },
+  { id: 'list-sessions', label: 'listSessions()' },
+  { id: 'delete-session',label: 'deleteSession()' },
+  { id: 'pin',           label: 'pin() / unpin()' },
+  { id: 'usage-method',  label: 'usage()' },
+  { id: 'tiers',         label: 'Memory Tiers' },
+  { id: 'encryption',    label: 'Encryption Keys' },
+  { id: 'rest',          label: 'REST API' },
+  { id: 'webhooks',      label: 'Webhooks' },
 ];
 
 /* ─── Page ──────────────────────────────────────────────────────────────── */
@@ -429,6 +434,112 @@ if (plaintext === null) {
                 <CodeBlock lang="ts" code={`
 await mem.delete('ent_7f3a9c...');
 `} />
+              </Method>
+            </div>
+
+            {/* ── writeMany() ─────────────────────────────────────────── */}
+            <div id="write-many" className="scroll-mt-8">
+              <Method
+                signature="mem.writeMany(sessionId, texts[], opts?)"
+                description="Encrypts and writes multiple memories to a session in parallel. Returns an array of entity keys in the same order as the input texts."
+                params={[
+                  { name: 'sessionId', type: 'string', desc: 'Session to write all memories into.' },
+                  { name: 'texts', type: 'string[]', desc: 'Array of plaintext strings to encrypt and store.' },
+                  { name: 'opts.ttl', type: "'working' | 'episodic' | 'persistent'", desc: "Applied to all writes. Defaults to 'episodic'." },
+                  { name: 'opts.agentId', type: 'string', desc: 'Tag all memories with this agent identifier.' },
+                ]}
+                returns="Promise<string[]> — array of entity keys"
+              >
+                <CodeBlock lang="ts" code={`
+const keys = await mem.writeMany('session-abc', [
+  'User prefers metric units',
+  'Task requires web search',
+  'Previous attempt failed at step 3',
+], { ttl: 'episodic', agentId: 'planner' });
+
+console.log(\`Stored \${keys.length} memories\`);
+`} />
+              </Method>
+            </div>
+
+            {/* ── listMemories() ──────────────────────────────────────── */}
+            <div id="list-memories" className="scroll-mt-8">
+              <Method
+                signature="mem.listMemories(opts?)"
+                description="Returns memory metadata (no decryption) for the authenticated key. Useful for dashboards, audits, or building custom recall logic."
+                params={[
+                  { name: 'opts.sessionId', type: 'string', desc: 'Filter to a specific session.' },
+                  { name: 'opts.agentId', type: 'string', desc: 'Filter to memories written by a specific agent.' },
+                  { name: 'opts.limit', type: 'number', desc: 'Max results to return. Defaults to 100.' },
+                ]}
+                returns="Promise<MemoryIndexEntry[]> — array of { entityKey, sessionId, agentId, ttlTier, createdAt, expiresAt, pinned }"
+              >
+                <CodeBlock lang="ts" code={`
+// List all memories for agent "analyst"
+const entries = await mem.listMemories({ agentId: 'analyst' });
+
+entries.forEach((e) => {
+  console.log(e.entityKey, e.ttlTier, e.pinned ? '📌' : '');
+});
+`} />
+              </Method>
+            </div>
+
+            {/* ── listSessions() ──────────────────────────────────────── */}
+            <div id="list-sessions" className="scroll-mt-8">
+              <Method
+                signature="mem.listSessions()"
+                description="Returns a list of all active sessions for the authenticated key, with memory counts and last activity timestamps. Sessions are ordered newest first."
+                returns="Promise<SessionEntry[]> — array of { sessionId, memoryCount, lastActivity }"
+              >
+                <CodeBlock lang="ts" code={`
+const sessions = await mem.listSessions();
+
+sessions.forEach((s) => {
+  console.log(s.sessionId, s.memoryCount, 'memories');
+});
+`} />
+              </Method>
+            </div>
+
+            {/* ── deleteSession() ─────────────────────────────────────── */}
+            <div id="delete-session" className="scroll-mt-8">
+              <Method
+                signature="mem.deleteSession(sessionId)"
+                description="Bulk soft-deletes all memories in a session. Returns the count of deleted memories. Useful for cleanup after an agent run completes."
+                params={[
+                  { name: 'sessionId', type: 'string', desc: 'The session to wipe.' },
+                ]}
+                returns="Promise<number> — count of deleted memories"
+              >
+                <CodeBlock lang="ts" code={`
+const count = await mem.deleteSession('session-abc');
+console.log(\`Deleted \${count} memories\`);
+`} />
+              </Method>
+            </div>
+
+            {/* ── pin() / unpin() ─────────────────────────────────────── */}
+            <div id="pin" className="scroll-mt-8">
+              <Method
+                signature="mem.pin(entityKey) / mem.unpin(entityKey)"
+                description="Pins a memory to prevent TTL expiry, or unpins it to restore normal TTL behaviour. Pinned memories remain visible across all queries regardless of their original expiry time."
+                params={[
+                  { name: 'entityKey', type: 'string', desc: 'The entity key returned by write().' },
+                ]}
+                returns="Promise<void>"
+              >
+                <CodeBlock lang="ts" code={`
+// Pin an important finding permanently
+const key = await mem.write('session-abc', 'Critical: service X has a race condition', { ttl: 'working' });
+await mem.pin(key);   // survives beyond the 15-minute working TTL
+
+// Later, unpin when no longer needed
+await mem.unpin(key);
+`} />
+                <Callout type="tip">
+                  Pin memories created as <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">working</code> tier that turn out to be important — promotes them to persistent without re-writing.
+                </Callout>
               </Method>
             </div>
 

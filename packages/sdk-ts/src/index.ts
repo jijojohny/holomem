@@ -9,6 +9,7 @@ export interface HoloMemOptions {
   apiKey: string;
   encryptionKey?: string;
   baseUrl?: string;
+  embed?: (text: string) => Promise<number[]>;
 }
 
 export interface Memory {
@@ -24,14 +25,44 @@ export interface UsageResponse {
   memories: { active: number };
 }
 
+export interface SessionEntry {
+  sessionId: string;
+  memoryCount: number;
+  lastActivity: string;
+}
+
+export interface MemoryIndexEntry {
+  entityKey: string;
+  sessionId: string;
+  agentId: string | null;
+  ttlTier: TtlTier;
+  createdAt: string;
+  expiresAt: string;
+  pinned: boolean;
+}
+
+export interface SearchResult {
+  entityKey: string;
+  sessionId: string;
+  agentId: string | null;
+  ttlTier: TtlTier;
+  createdAt: string;
+  expiresAt: string;
+  pinned: boolean;
+  score: number;
+  plaintext: string;
+}
+
 export class HoloMem {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly privKey: PrivateKey;
+  private readonly embedFn?: (text: string) => Promise<number[]>;
 
   constructor(opts: HoloMemOptions) {
     this.apiKey = opts.apiKey;
     this.baseUrl = opts.baseUrl ?? API_BASE;
+    this.embedFn = opts.embed;
 
     if (opts.encryptionKey) {
       this.privKey = new PrivateKey(Buffer.from(opts.encryptionKey, 'hex'));
@@ -104,11 +135,13 @@ export class HoloMem {
 
   async write(sessionId: string, plaintext: string, opts?: { agentId?: string; ttl?: TtlTier }): Promise<string> {
     const ciphertext = this.encrypt(plaintext);
+    const embedding = this.embedFn ? await this.embedFn(plaintext) : undefined;
     const result = await this.request('POST', '/v1/memories', {
       session_id: sessionId,
       ciphertext,
       ttl_tier: opts?.ttl ?? 'episodic',
       agent_id: opts?.agentId,
+      embedding,
     }) as { entity_key: string };
     return result.entity_key;
   }
@@ -140,5 +173,104 @@ export class HoloMem {
 
   async usage(): Promise<UsageResponse> {
     return this.request('GET', '/v1/usage') as Promise<UsageResponse>;
+  }
+
+  async listSessions(): Promise<SessionEntry[]> {
+    const result = await this.request('GET', '/v1/sessions') as {
+      sessions: Array<{ session_id: string; memory_count: number; last_activity: string }>;
+    };
+    return result.sessions.map((s) => ({
+      sessionId: s.session_id,
+      memoryCount: s.memory_count,
+      lastActivity: s.last_activity,
+    }));
+  }
+
+  async deleteSession(sessionId: string): Promise<number> {
+    const result = await this.request('DELETE', `/v1/sessions/${encodeURIComponent(sessionId)}`) as { deleted: number };
+    return result.deleted;
+  }
+
+  async writeMany(sessionId: string, texts: string[], opts?: { agentId?: string; ttl?: TtlTier }): Promise<string[]> {
+    return Promise.all(texts.map((text) => this.write(sessionId, text, opts)));
+  }
+
+  async listMemories(opts?: { sessionId?: string; agentId?: string; limit?: number }): Promise<MemoryIndexEntry[]> {
+    const params = new URLSearchParams();
+    if (opts?.sessionId) params.set('session_id', opts.sessionId);
+    if (opts?.agentId) params.set('agent_id', opts.agentId);
+    if (opts?.limit !== undefined) params.set('limit', String(opts.limit));
+    const qs = params.toString();
+    const result = await this.request('GET', `/v1/memories${qs ? `?${qs}` : ''}`) as {
+      memories: Array<{
+        entity_key: string;
+        session_id: string;
+        agent_id: string | null;
+        ttl_tier: TtlTier;
+        created_at: string;
+        expires_at: string;
+        pinned: boolean;
+      }>;
+    };
+    return result.memories.map((m) => ({
+      entityKey: m.entity_key,
+      sessionId: m.session_id,
+      agentId: m.agent_id,
+      ttlTier: m.ttl_tier,
+      createdAt: m.created_at,
+      expiresAt: m.expires_at,
+      pinned: m.pinned ?? false,
+    }));
+  }
+
+  async search(
+    queryText: string,
+    opts?: { sessionId?: string; agentId?: string; limit?: number; threshold?: number },
+  ): Promise<SearchResult[]> {
+    if (!this.embedFn) {
+      throw new Error('search() requires an embed callback — pass embed: fn to HoloMem constructor');
+    }
+    const embedding = await this.embedFn(queryText);
+    const result = await this.request('POST', '/v1/memories/search', {
+      embedding,
+      session_id: opts?.sessionId,
+      agent_id: opts?.agentId,
+      limit: opts?.limit ?? 10,
+      threshold: opts?.threshold ?? 0.7,
+    }) as {
+      memories: Array<{
+        entity_key: string;
+        session_id: string;
+        agent_id: string | null;
+        ttl_tier: TtlTier;
+        created_at: string;
+        expires_at: string;
+        pinned: boolean;
+        score: number;
+        ciphertext: string | null;
+      }>;
+    };
+
+    return result.memories
+      .filter((m) => m.ciphertext !== null)
+      .map((m) => ({
+        entityKey: m.entity_key,
+        sessionId: m.session_id,
+        agentId: m.agent_id,
+        ttlTier: m.ttl_tier,
+        createdAt: m.created_at,
+        expiresAt: m.expires_at,
+        pinned: m.pinned,
+        score: m.score,
+        plaintext: this.decrypt(m.ciphertext!),
+      }));
+  }
+
+  async pin(entityKey: string): Promise<void> {
+    await this.request('PATCH', `/v1/memories/${entityKey}`, { pinned: true });
+  }
+
+  async unpin(entityKey: string): Promise<void> {
+    await this.request('PATCH', `/v1/memories/${entityKey}`, { pinned: false });
   }
 }

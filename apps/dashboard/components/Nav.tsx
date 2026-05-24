@@ -61,6 +61,18 @@ const NAV = [
       </svg>
     ),
   },
+  {
+    href: '/teams',
+    label: 'Teams',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <circle cx="6" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.4"/>
+        <circle cx="12" cy="5.5" r="2" stroke="currentColor" strokeWidth="1.3"/>
+        <path d="M1 13c0-2.21 2.24-4 5-4s5 1.79 5 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+        <path d="M12 9c1.66 0 3 1.34 3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
 ];
 
 const BOTTOM = [
