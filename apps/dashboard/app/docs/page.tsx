@@ -258,7 +258,7 @@ export default function DocsPage() {
             <div className="grid grid-cols-1 gap-4 mb-6">
               {[
                 { step: '1', title: 'Get an API key', desc: 'Go to API Keys → click Create Key. Copy the key — it\'s shown once.' },
-                { step: '2', title: 'Install the SDK', desc: 'npm install @holomem/sdk' },
+                { step: '2', title: 'Install the SDK', desc: 'npm install "https://gitpkg.now.sh/jijojohny/holomem/packages/sdk-ts?main"' },
                 { step: '3', title: 'Write your first memory', desc: 'See the example below.' },
               ].map((s) => (
                 <div key={s.step} className="flex gap-4 items-start p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' }}>
@@ -298,7 +298,7 @@ memories.forEach((m) => console.log(m.plaintext));
           {/* ── Installation ────────────────────────────────────────── */}
           <Section id="install" title="Installation">
             <CodeBlock lang="bash" code={`
-npm install @holomem/sdk
+npm install "https://gitpkg.now.sh/jijojohny/holomem/packages/sdk-ts?main"
 `} />
             <p className="text-[13px] text-zinc-400 leading-relaxed">
               Requires Node.js 18+ or any modern browser environment. The SDK is ESM-first.
