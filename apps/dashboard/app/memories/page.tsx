@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import DashboardShell from '../../components/DashboardShell';
@@ -97,6 +97,14 @@ function RowSkeleton() {
 
 /* ─── Page ────────────────────────────────────────────────────────────── */
 export default function MemoriesPage() {
+  return (
+    <Suspense>
+      <MemoriesContent />
+    </Suspense>
+  );
+}
+
+function MemoriesContent() {
   useRequireAuth();
   const router = useRouter();
   const params = useSearchParams();
