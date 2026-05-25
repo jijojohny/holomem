@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import DashboardShell from '../../../components/DashboardShell';
-import { apiGet, apiDelete, apiPatch, AuthError, type MemoryEntry } from '../../../lib/api';
+import { apiGet, apiDelete, apiPatch, AuthError, type MemoryEntry, type GraphData } from '../../../lib/api';
 import { useRequireAuth } from '../../../lib/auth';
 import { useToast } from '../../../components/Toast';
 
@@ -41,6 +41,202 @@ const TIER_CONFIG: Record<string, { color: string; bg: string; border: string; l
 };
 const DEFAULT_TIER = { color: '#a78bfa', bg: 'rgba(167,139,250,0.1)', border: 'rgba(167,139,250,0.25)', label: 'UNKNOWN' };
 
+const EXPLORER = 'https://explorer.braga.hoodi.arkiv.network';
+
+function shortAddr(addr: string | null): string {
+  if (!addr || addr.length < 10) return addr ?? '—';
+  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+}
+
+/* ─── Memory Graph ──────────────────────────────────────────────────────── */
+function hexPoints(cx: number, cy: number, r: number): string {
+  return Array.from({ length: 6 }, (_, i) => {
+    const a = (Math.PI / 3) * i - Math.PI / 6;
+    return `${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`;
+  }).join(' ');
+}
+
+function MemoryGraph({ graph }: { graph: GraphData }) {
+  const W = 640;
+  const H = 260;
+  const sessionX = 88;
+  const sessionY = H / 2;
+  const nodeX = 330;
+  const edgeX = 530;
+  const nodes = graph.nodes;
+  const edges = graph.edges;
+
+  function nodeY(i: number): number {
+    if (nodes.length <= 1) return H / 2;
+    return 30 + (i * (H - 60)) / (nodes.length - 1);
+  }
+
+  const renderedEdgePaths = new Set<string>();
+
+  return (
+    <div
+      className="rounded-2xl overflow-hidden"
+      style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' }}
+    >
+      <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div>
+          <h2 className="text-[14px] font-bold text-white">On-Chain Memory Graph</h2>
+          <p className="text-[9px] font-bold tracking-[0.18em] uppercase text-zinc-600 mt-0.5">
+            3 Arkiv Entity Types · PROJECT: HOLOMEM_SYSTEM_PROD
+          </p>
+        </div>
+        <div className="flex items-center gap-4">
+          {([
+            { color: '#a78bfa', label: 'agent-session', shape: '⬡' },
+            { color: '#34d399', label: 'memory-node', shape: '●' },
+            { color: '#38bdf8', label: 'relationship-edge', shape: '◇' },
+          ] as const).map((t) => (
+            <div key={t.label} className="flex items-center gap-1.5">
+              <span className="text-[13px]" style={{ color: t.color }}>{t.shape}</span>
+              <span className="text-[9px] font-bold tracking-[0.1em] text-zinc-600">{t.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {nodes.length === 0 && !graph.session ? (
+        <div className="px-6 py-10 flex items-center justify-center">
+          <p className="text-[12px] text-zinc-600">No on-chain entities found for this session yet.</p>
+        </div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: '260px', display: 'block' }}>
+          <defs>
+            <marker id="arr-blue" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <path d="M0,0 L7,3.5 L0,7 Z" fill="rgba(56,189,248,0.55)" />
+            </marker>
+            <filter id="glow-violet" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          </defs>
+
+          {/* Session → node dashed connector lines */}
+          {graph.session && nodes.map((node, i) => (
+            <line
+              key={`sl-${node.entity_key}`}
+              x1={sessionX + 24} y1={sessionY}
+              x2={nodeX - 18} y2={nodeY(i)}
+              stroke="rgba(167,139,250,0.18)"
+              strokeWidth="1.5"
+              strokeDasharray="5 3"
+            />
+          ))}
+
+          {/* Curved path between memory nodes that share an edge */}
+          {edges.map((edge) => {
+            const pIdx = nodes.findIndex((n) => n.entity_key === edge.parent_key);
+            const cIdx = nodes.findIndex((n) => n.entity_key === edge.child_key);
+            const pairKey = `${Math.min(pIdx, cIdx)}-${Math.max(pIdx, cIdx)}`;
+            if (pIdx === -1 || cIdx === -1 || renderedEdgePaths.has(pairKey)) return null;
+            renderedEdgePaths.add(pairKey);
+            const py = nodeY(pIdx);
+            const cy2 = nodeY(cIdx);
+            return (
+              <path
+                key={`ep-${edge.entity_key}`}
+                d={`M ${nodeX + 18} ${py} C ${nodeX + 75} ${py}, ${nodeX + 75} ${cy2}, ${nodeX + 18} ${cy2}`}
+                stroke="rgba(56,189,248,0.3)"
+                strokeWidth="1.5"
+                fill="none"
+                strokeDasharray="4 2"
+                markerEnd="url(#arr-blue)"
+              />
+            );
+          })}
+
+          {/* Node → edge-diamond connector lines */}
+          {edges.map((edge, i) => {
+            const pIdx = nodes.findIndex((n) => n.entity_key === edge.parent_key);
+            if (pIdx === -1) return null;
+            const ey = edges.length === 1 ? H / 2 : 40 + (i * (H - 80)) / (edges.length - 1);
+            return (
+              <line
+                key={`ndl-${edge.entity_key}`}
+                x1={nodeX + 18} y1={nodeY(pIdx)}
+                x2={edgeX - 13} y2={ey}
+                stroke="rgba(56,189,248,0.12)"
+                strokeWidth="1"
+                strokeDasharray="3 3"
+              />
+            );
+          })}
+
+          {/* Session entity — hexagon */}
+          {graph.session && (
+            <a href={`${EXPLORER}/entity/${graph.session.entity_key}`} target="_blank" rel="noopener noreferrer">
+              <g style={{ cursor: 'pointer' }}>
+                <polygon
+                  points={hexPoints(sessionX, sessionY, 24)}
+                  fill="rgba(124,58,237,0.2)"
+                  stroke="rgba(167,139,250,0.6)"
+                  strokeWidth="1.5"
+                  filter="url(#glow-violet)"
+                />
+                <text x={sessionX} y={sessionY - 33} textAnchor="middle" fill="rgba(167,139,250,0.55)" fontSize={8} fontFamily="monospace">agent-session</text>
+                <text x={sessionX} y={sessionY + 5} textAnchor="middle" fill="rgba(167,139,250,0.95)" fontSize={9} fontFamily="monospace" fontWeight="bold">
+                  {graph.session.entity_key.slice(0, 6)}…
+                </text>
+                {graph.session.creator && (
+                  <text x={sessionX} y={sessionY + 37} textAnchor="middle" fill="rgba(167,139,250,0.38)" fontSize={7} fontFamily="monospace">
+                    {shortAddr(graph.session.creator)}
+                  </text>
+                )}
+              </g>
+            </a>
+          )}
+
+          {/* Memory nodes — circles */}
+          {nodes.map((node, i) => (
+            <a key={node.entity_key} href={`${EXPLORER}/entity/${node.entity_key}`} target="_blank" rel="noopener noreferrer">
+              <g style={{ cursor: 'pointer' }}>
+                <circle cx={nodeX} cy={nodeY(i)} r={18} fill="rgba(52,211,153,0.12)" stroke="rgba(52,211,153,0.5)" strokeWidth="1.5" />
+                <text x={nodeX} y={nodeY(i) - 24} textAnchor="middle" fill="rgba(52,211,153,0.5)" fontSize={7} fontFamily="monospace">memory-node</text>
+                <text x={nodeX} y={nodeY(i) + 5} textAnchor="middle" fill="rgba(52,211,153,0.95)" fontSize={9} fontFamily="monospace" fontWeight="bold">
+                  {node.entity_key.slice(0, 6)}…
+                </text>
+                <text x={nodeX} y={nodeY(i) + 27} textAnchor="middle" fill="rgba(52,211,153,0.38)" fontSize={7} fontFamily="monospace">
+                  {node.agent_id ?? '—'}
+                </text>
+              </g>
+            </a>
+          ))}
+
+          {/* Relationship-edge entities — diamonds */}
+          {edges.map((edge, i) => {
+            const ey = edges.length === 1 ? H / 2 : 40 + (i * (H - 80)) / (edges.length - 1);
+            const r = 12;
+            const dpts = `${edgeX},${ey - r} ${edgeX + r},${ey} ${edgeX},${ey + r} ${edgeX - r},${ey}`;
+            return (
+              <a key={edge.entity_key} href={`${EXPLORER}/entity/${edge.entity_key}`} target="_blank" rel="noopener noreferrer">
+                <g style={{ cursor: 'pointer' }}>
+                  <polygon points={dpts} fill="rgba(56,189,248,0.1)" stroke="rgba(56,189,248,0.45)" strokeWidth="1.3" />
+                  <text x={edgeX} y={ey + 4} textAnchor="middle" fill="rgba(56,189,248,0.9)" fontSize={7} fontFamily="monospace" fontWeight="bold">
+                    {edge.edge_type.slice(0, 9)}
+                  </text>
+                  <text x={edgeX} y={ey + 22} textAnchor="middle" fill="rgba(56,189,248,0.32)" fontSize={6} fontFamily="monospace">
+                    relationship-edge
+                  </text>
+                </g>
+              </a>
+            );
+          })}
+
+          {graph.session && nodes.length === 0 && (
+            <text x={W / 2 + 40} y={H / 2 + 4} textAnchor="middle" fill="rgba(113,113,122,0.45)" fontSize={11} fontFamily="sans-serif">
+              Session created · write memories to populate graph
+            </text>
+          )}
+        </svg>
+      )}
+    </div>
+  );
+}
+
 /* ─── Skeleton ─────────────────────────────────────────────────────────── */
 function TableRowSkeleton() {
   return (
@@ -66,6 +262,20 @@ export default function SessionDetailPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deletingSession, setDeletingSession] = useState(false);
   const [pinning, setPinning] = useState<string | null>(null);
+  const [graph, setGraph] = useState<GraphData | null>(null);
+  const [graphLoading, setGraphLoading] = useState(true);
+
+  const loadGraph = useCallback(async () => {
+    setGraphLoading(true);
+    try {
+      const data = await apiGet<GraphData>(`/v1/sessions/${encodeURIComponent(sessionId)}/graph`);
+      setGraph(data);
+    } catch {
+      setGraph(null);
+    } finally {
+      setGraphLoading(false);
+    }
+  }, [sessionId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,7 +291,7 @@ export default function SessionDetailPage() {
     }
   }, [sessionId, router]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); loadGraph(); }, [load, loadGraph]);
 
   async function deleteSession() {
     const ok = await confirm({
@@ -269,6 +479,19 @@ export default function SessionDetailPage() {
             </div>
           ))}
         </div>
+
+        {/* ── Memory Graph ─────────────────────────────────────────── */}
+        {graphLoading ? (
+          <div
+            className="rounded-2xl px-5 py-10 flex items-center justify-center gap-3 animate-pulse"
+            style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' }}
+          >
+            <div className="w-4 h-4 rounded-full" style={{ background: 'rgba(167,139,250,0.3)' }} />
+            <p className="text-[12px] text-zinc-600">Loading on-chain graph…</p>
+          </div>
+        ) : graph ? (
+          <MemoryGraph graph={graph} />
+        ) : null}
 
         {/* ── Memory table ─────────────────────────────────────────── */}
         <div

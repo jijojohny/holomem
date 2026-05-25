@@ -39,4 +39,6 @@ export function enqueueWrite<T>(fn: () => Promise<T>): Promise<T> {
   return writeQueue.enqueue(fn);
 }
 
+export const poolWalletAddress: string = walletClient.account.address;
+
 export { walletClient };

@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS memory_index (
 
 ALTER TABLE memory_index ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE memory_index ADD COLUMN IF NOT EXISTS embedding vector(1536);
+-- Immutable $creator field from the Arkiv entity (wallet address of the writer)
+ALTER TABLE memory_index ADD COLUMN IF NOT EXISTS creator TEXT;
 
 CREATE INDEX IF NOT EXISTS memory_index_session_idx
   ON memory_index (api_key_id, session_id) WHERE deleted_at IS NULL;
@@ -100,6 +102,20 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 
 CREATE INDEX IF NOT EXISTS webhook_deliveries_idx
   ON webhook_deliveries (webhook_id, created_at DESC);
+
+-- Tracks agent-session entities (third Arkiv entity type — one per session, written on first memory)
+CREATE TABLE IF NOT EXISTS session_index (
+  entity_key   TEXT PRIMARY KEY,
+  api_key_id   UUID NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+  session_id   TEXT NOT NULL,
+  agent_id     TEXT,
+  creator      TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (api_key_id, session_id)
+);
+
+CREATE INDEX IF NOT EXISTS session_index_key_idx
+  ON session_index (api_key_id, session_id);
 
 -- Tracks relationship-edge entities (second Arkiv entity type — links between memory nodes)
 CREATE TABLE IF NOT EXISTS edge_index (

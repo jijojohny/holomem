@@ -2,9 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { db } from '../db/pool.js';
 import {
   writeMemory, readMemory, listSessionMemories, TTL_SECONDS,
-  writeRelationshipEdge, listEdgesByParent,
+  writeRelationshipEdge, listEdgesByParent, writeAgentSession,
   type TtlTier,
 } from '../arkiv.js';
+import { poolWalletAddress } from '../wallet-pool/index.js';
 import { deliverWebhooks } from '../webhooks.js';
 import '../types.js';
 
@@ -46,6 +47,27 @@ export async function memoriesRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: `ttl_tier must be one of: ${TTL_TIERS.join(', ')}` });
     }
 
+    // Auto-create an agent-session entity on Arkiv for new sessions (third entity type)
+    const existingSession = await db.query(
+      `SELECT 1 FROM session_index WHERE session_id = $1 AND api_key_id = $2 LIMIT 1`,
+      [session_id, req.apiKey.id],
+    );
+    if (!existingSession.rowCount) {
+      try {
+        const { entityKey: sessionEntityKey } = await writeAgentSession({
+          sessionId: session_id,
+          agentId: agent_id ?? 'sdk',
+        });
+        await db.query(
+          `INSERT INTO session_index (entity_key, api_key_id, session_id, agent_id, creator)
+           VALUES ($1, $2, $3, $4, $5) ON CONFLICT (api_key_id, session_id) DO NOTHING`,
+          [sessionEntityKey, req.apiKey.id, session_id, agent_id ?? 'sdk', poolWalletAddress],
+        );
+      } catch {
+        // Session entity creation is best-effort; don't fail the memory write
+      }
+    }
+
     const { entityKey, txHash } = await writeMemory({
       sessionId: session_id,
       agentId: agent_id,
@@ -58,9 +80,9 @@ export async function memoriesRoutes(app: FastifyInstance) {
 
     const embeddingValue = embedding ? `[${embedding.join(',')}]` : null;
     await db.query(
-      `INSERT INTO memory_index (entity_key, api_key_id, session_id, agent_id, ttl_tier, expires_at, embedding)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [entityKey, req.apiKey.id, session_id, agent_id ?? 'sdk', ttl_tier, expiresAt.toISOString(), embeddingValue],
+      `INSERT INTO memory_index (entity_key, api_key_id, session_id, agent_id, ttl_tier, expires_at, embedding, creator)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [entityKey, req.apiKey.id, session_id, agent_id ?? 'sdk', ttl_tier, expiresAt.toISOString(), embeddingValue, poolWalletAddress],
     );
 
     await db.query(
@@ -103,6 +125,7 @@ export async function memoriesRoutes(app: FastifyInstance) {
       session_id: memory.sessionId,
       agent_id: memory.agentId,
       ciphertext: memory.ciphertext,
+      creator: memory.creator,
     });
   });
 
@@ -199,8 +222,9 @@ export async function memoriesRoutes(app: FastifyInstance) {
       created_at: string;
       expires_at: string;
       pinned: boolean;
+      creator: string | null;
     }>(
-      `SELECT entity_key, session_id, agent_id, ttl_tier, created_at, expires_at, pinned
+      `SELECT entity_key, session_id, agent_id, ttl_tier, created_at, expires_at, pinned, creator
        FROM memory_index
        WHERE ${conditions.join(' AND ')}
        ORDER BY pinned DESC, created_at DESC

@@ -177,6 +177,8 @@ const TOC = [
   { id: 'recall',        label: 'recall()' },
   { id: 'read',          label: 'read()' },
   { id: 'delete',        label: 'delete()' },
+  { id: 'link',          label: 'link()' },
+  { id: 'getGraph',      label: 'getGraph()' },
   { id: 'write-many',    label: 'writeMany()' },
   { id: 'list-memories', label: 'listMemories()' },
   { id: 'list-sessions', label: 'listSessions()' },
@@ -184,6 +186,7 @@ const TOC = [
   { id: 'pin',           label: 'pin() / unpin()' },
   { id: 'search',        label: 'search()' },
   { id: 'usage-method',  label: 'usage()' },
+  { id: 'entity-model',  label: 'Entity Model' },
   { id: 'tiers',         label: 'Memory Tiers' },
   { id: 'semantic',      label: 'Semantic Search' },
   { id: 'adapters',      label: 'Framework Adapters' },
@@ -442,6 +445,70 @@ await mem.delete('ent_7f3a9c...');
             </div>
 
             {/* ── writeMany() ─────────────────────────────────────────── */}
+            {/* ── link() */}
+            <div id="link" className="scroll-mt-8">
+              <Method
+                signature="mem.link(parentKey, childKey, edgeType?)"
+                description="Creates a relationship-edge entity on Arkiv linking two memory nodes. This is HoloMem's second on-chain entity type — use it to model reasoning chains, delegation, or causal relationships between memories."
+                params={[
+                  { name: 'parentKey', type: 'string', desc: 'Entity key of the source memory node (returned by write()).' },
+                  { name: 'childKey', type: 'string', desc: 'Entity key of the target memory node.' },
+                  { name: 'edgeType', type: 'string', desc: "Label for this edge. Defaults to 'linked'. Descriptive values: 'reasoning-step', 'delegation', 'causes', 'refines'." },
+                ]}
+                returns="Promise<{ entityKey: string; txHash: string; edgeType: string }>"
+              >
+                <CodeBlock lang="ts" code={`
+// Connect planner output → executor findings as reasoning steps
+const planKey  = await mem.write('session-abc', 'Research plan: 4 steps', { agentId: 'planner' });
+const result1  = await mem.write('session-abc', 'Step 1 finding...', { agentId: 'executor-1' });
+const result2  = await mem.write('session-abc', 'Step 2 finding...', { agentId: 'executor-2' });
+
+await mem.link(planKey, result1, 'reasoning-step');
+await mem.link(planKey, result2, 'reasoning-step');
+
+// Each call writes a relationship-edge entity to Arkiv
+const { edges } = await mem.getGraph('session-abc');
+console.log(\`\${edges.length} relationship-edge entities on-chain\`);
+`} />
+                <Callout type="tip">
+                  Each <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">link()</code> writes a standalone <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">relationship-edge</code> entity with <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">$creator</code> attribution and its own entity key — independently verifiable at <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">explorer.braga.hoodi.arkiv.network</code>.
+                </Callout>
+              </Method>
+            </div>
+
+            {/* ── getGraph() */}
+            <div id="getGraph" className="scroll-mt-8">
+              <Method
+                signature="mem.getGraph(sessionId)"
+                description="Returns the complete on-chain memory graph for a session: the agent-session root entity, all memory-node entities, and all relationship-edge entities. All three are fetched from Arkiv via PROJECT_ATTRIBUTE-filtered queries."
+                params={[
+                  { name: 'sessionId', type: 'string', desc: 'Session whose full entity graph to retrieve.' },
+                ]}
+                returns="Promise<GraphData> — { session, nodes[], edges[], meta }"
+              >
+                <CodeBlock lang="ts" code={`
+const graph = await mem.getGraph('session-abc');
+
+// Three distinct Arkiv entity types
+console.log('agent-session:', graph.session?.entity_key);
+console.log('memory-nodes:', graph.nodes.length);
+console.log('relationship-edges:', graph.edges.length);
+console.log('Total on-chain entities:', graph.meta.total);
+
+// Explorer links for each entity
+for (const node of graph.nodes) {
+  const url = \`https://explorer.braga.hoodi.arkiv.network/entity/\${node.entity_key}\`;
+  console.log(node.agent_id, '->', url);
+}
+
+// Creator wallet address (immutable $creator from Arkiv)
+for (const node of graph.nodes) {
+  console.log('Written by:', node.creator ?? 'unknown');
+}
+`} />
+              </Method>
+            </div>
+
             <div id="write-many" className="scroll-mt-8">
               <Method
                 signature="mem.writeMany(sessionId, texts[], opts?)"
@@ -662,6 +729,91 @@ console.log(\`\${stats.memories.active} active memory nodes\`);
             </div>
           </Section>
 
+          {/* ── Arkiv Entity Model ──────────────────────────────────── */}
+          <Section id="entity-model" title="Arkiv Entity Model" subtitle="HoloMem uses three distinct on-chain entity types, all tagged with PROJECT_ATTRIBUTE = HOLOMEM_SYSTEM_PROD.">
+            <p className="text-[13px] text-zinc-400 leading-relaxed mb-5">
+              Every entity written to Arkiv carries a shared <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">project</code> attribute that scopes all queries, plus a <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">type</code> attribute that distinguishes entity roles.{' '}
+              Arkiv's immutable <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">$creator</code> field records the wallet that wrote each entity — tamper-proof attribution enforced by the L3 chain.
+            </p>
+
+            {/* Entity type cards */}
+            <div className="space-y-4 mb-6">
+              {[
+                {
+                  type: 'agent-session',
+                  color: '#a78bfa',
+                  bg: 'rgba(124,58,237,0.08)',
+                  border: 'rgba(167,139,250,0.2)',
+                  shape: '⬡',
+                  ttl: 'persistent (30d)',
+                  desc: 'Root entity created on the first memory write to a new session. Anchors the session graph and carries session-level metadata.',
+                  attrs: ['project=HOLOMEM_SYSTEM_PROD', 'type=agent-session', 'sessionId=<session>', 'agentId=<agent>'],
+                },
+                {
+                  type: 'memory-node',
+                  color: '#34d399',
+                  bg: 'rgba(52,211,153,0.08)',
+                  border: 'rgba(52,211,153,0.2)',
+                  shape: '●',
+                  ttl: 'working (15m) · episodic (1h) · persistent (30d)',
+                  desc: 'Core memory entity. Payload is ECIES-encrypted ciphertext — the Arkiv ledger never sees raw content. TTL controls auto-pruning.',
+                  attrs: ['project=HOLOMEM_SYSTEM_PROD', 'type=memory-node', 'sessionId=<session>', 'agentId=<agent>'],
+                },
+                {
+                  type: 'relationship-edge',
+                  color: '#38bdf8',
+                  bg: 'rgba(56,189,248,0.08)',
+                  border: 'rgba(56,189,248,0.2)',
+                  shape: '◇',
+                  ttl: 'episodic (1h)',
+                  desc: 'Directed link between two memory nodes. Models reasoning chains, delegation, causality. Queried by parentKey to traverse the graph.',
+                  attrs: ['project=HOLOMEM_SYSTEM_PROD', 'type=relationship-edge', 'parentKey=<entity-key>', 'childKey=<entity-key>', 'edgeType=<label>', 'sessionId=<session>'],
+                },
+              ].map((e) => (
+                <div key={e.type} className="rounded-xl p-4" style={{ background: e.bg, border: `1px solid ${e.border}` }}>
+                  <div className="flex items-start gap-3">
+                    <span className="text-[20px] mt-0.5 shrink-0" style={{ color: e.color }}>{e.shape}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <code className="text-[13px] font-mono font-bold" style={{ color: e.color }}>{e.type}</code>
+                        <span className="text-[9px] font-bold tracking-[0.12em] text-zinc-600 uppercase">TTL: {e.ttl}</span>
+                      </div>
+                      <p className="text-[12px] text-zinc-400 leading-relaxed mb-2">{e.desc}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {e.attrs.map((a) => (
+                          <code key={a} className="text-[10px] font-mono px-2 py-0.5 rounded" style={{ background: 'rgba(0,0,0,0.3)', color: 'rgba(212,212,216,0.6)' }}>{a}</code>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <Callout type="info">
+              All three entity types are queried via <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">buildQuery().where(and([eq('project', 'HOLOMEM_SYSTEM_PROD'), eq('type', '...')]))</code> — the PROJECT_ATTRIBUTE ensures namespace isolation across the shared Arkiv L3 chain.
+            </Callout>
+
+            <CodeBlock lang="ts" code={`
+// Three Arkiv entity types in one session graph
+// All filtered by: project = HOLOMEM_SYSTEM_PROD
+
+// 1. agent-session  — written automatically on first mem.write()
+// 2. memory-node    — written by mem.write()
+// 3. relationship-edge — written by mem.link()
+
+const key1 = await mem.write('session-001', 'Agent context loaded', { agentId: 'planner' });
+const key2 = await mem.write('session-001', 'Tool call result: success', { agentId: 'executor' });
+await mem.link(key1, key2, 'delegation');  // → writes relationship-edge entity
+
+const graph = await mem.getGraph('session-001');
+// graph.session  → 1 agent-session entity  (type: agent-session)
+// graph.nodes    → 2 memory-node entities  (type: memory-node)
+// graph.edges    → 1 edge entity           (type: relationship-edge)
+// graph.meta.entity_types → ['agent-session', 'memory-node', 'relationship-edge']
+`} />
+          </Section>
+
           {/* ── Semantic Search ─────────────────────────────────────── */}
           <Section id="semantic" title="Semantic Search" subtitle="Find memories by meaning, not just session. Embeddings stay in your process — the server never sees plaintext.">
             <p className="text-[13px] text-zinc-400 leading-relaxed mb-4">
@@ -863,6 +1015,65 @@ Authorization: Bearer hm_live_your_key
   "reads": { "this_month": 3210 },
   "memories": { "active": 87 }
 }
+`} />
+
+            <p className="text-[13px] font-semibold text-white mb-1">Create a relationship-edge entity</p>
+            <CodeBlock lang="http" code={`
+POST /v1/memories/:parentKey/link
+Authorization: Bearer hm_live_your_key
+Content-Type: application/json
+
+{
+  "child_key": "0xabc123...",
+  "edge_type": "reasoning-step"
+}
+
+// Response 201
+{
+  "entity_key": "0xedge...",
+  "tx_hash": "0xabc...",
+  "edge_type": "reasoning-step",
+  "parent_key": "0xparent...",
+  "child_key": "0xabc123..."
+}
+`} />
+
+            <p className="text-[13px] font-semibold text-white mb-1">Fetch full session graph (all 3 entity types)</p>
+            <CodeBlock lang="http" code={`
+GET /v1/sessions/:id/graph
+Authorization: Bearer hm_live_your_key
+
+// Response 200
+{
+  "session": {
+    "entity_key": "0xsession...", "session_id": "my-session",
+    "agent_id": "planner", "creator": "0xwallet...", "type": "agent-session"
+  },
+  "nodes": [
+    { "entity_key": "0xnode1...", "agent_id": "executor-1", "creator": "0xwallet...", "type": "memory-node" }
+  ],
+  "edges": [
+    { "entity_key": "0xedge1...", "parent_key": "0xnode1...", "child_key": "0xnode2...",
+      "edge_type": "delegation", "type": "relationship-edge" }
+  ],
+  "meta": {
+    "project_attribute": "HOLOMEM_SYSTEM_PROD",
+    "entity_types": ["agent-session", "memory-node", "relationship-edge"],
+    "total": 5
+  }
+}
+`} />
+
+            <p className="text-[13px] font-semibold text-white mb-1">Explicitly create a session entity</p>
+            <CodeBlock lang="http" code={`
+POST /v1/sessions
+Authorization: Bearer hm_live_your_key
+Content-Type: application/json
+
+{ "session_id": "my-session", "agent_id": "planner" }
+
+// Response 201
+{ "entity_key": "0xsession...", "tx_hash": "0xabc...", "session_id": "my-session", "created": true }
 `} />
           </Section>
 

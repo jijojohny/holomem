@@ -81,6 +81,8 @@ export interface Session {
   session_id: string;
   memory_count: number;
   last_activity: string;
+  session_entity_key: string | null;
+  creator: string | null;
 }
 
 export interface MemoryEntry {
@@ -91,6 +93,7 @@ export interface MemoryEntry {
   created_at: string;
   expires_at: string;
   pinned: boolean;
+  creator: string | null;
 }
 
 export interface DayUsage {
@@ -140,4 +143,40 @@ export interface TeamMember {
   email: string;
   role: string;
   joined_at: string;
+}
+
+export interface GraphNode {
+  entity_key: string;
+  agent_id: string;
+  session_id: string;
+  creator: string | null;
+  type: 'memory-node';
+}
+
+export interface GraphEdge {
+  entity_key: string;
+  parent_key: string;
+  child_key: string;
+  edge_type: string;
+  session_id: string;
+  type: 'relationship-edge';
+}
+
+export interface GraphSession {
+  entity_key: string;
+  session_id: string;
+  agent_id: string;
+  creator: string | null;
+  type: 'agent-session';
+}
+
+export interface GraphData {
+  session: GraphSession | null;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  meta: {
+    project_attribute: string;
+    entity_types: string[];
+    total: number;
+  };
 }

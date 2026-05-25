@@ -85,23 +85,39 @@ function NodeCard({ session, index, onClick }: { session: Session; index: number
           </div>
         </div>
 
-        {/* Status badge */}
-        <div
-          className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[9px] font-bold tracking-[0.12em]"
-          style={{
-            background: active ? 'rgba(52,211,153,0.1)' : 'rgba(255,255,255,0.04)',
-            border: active ? '1px solid rgba(52,211,153,0.25)' : '1px solid rgba(255,255,255,0.08)',
-            color: active ? '#34d399' : '#52525b',
-          }}
-        >
-          <span
-            className="w-1.5 h-1.5 rounded-full shrink-0"
+        <div className="flex items-center gap-1.5">
+          {/* On-chain badge */}
+          {session.session_entity_key && (
+            <div
+              className="px-1.5 py-1 rounded-md text-[9px] font-bold tracking-[0.1em]"
+              style={{
+                background: 'rgba(167,139,250,0.1)',
+                border: '1px solid rgba(167,139,250,0.25)',
+                color: '#a78bfa',
+              }}
+              title={`Arkiv entity: ${session.session_entity_key}`}
+            >
+              ⬡
+            </div>
+          )}
+          {/* Status badge */}
+          <div
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[9px] font-bold tracking-[0.12em]"
             style={{
-              background: active ? '#34d399' : '#52525b',
-              boxShadow: active ? '0 0 6px rgba(52,211,153,0.7)' : 'none',
+              background: active ? 'rgba(52,211,153,0.1)' : 'rgba(255,255,255,0.04)',
+              border: active ? '1px solid rgba(52,211,153,0.25)' : '1px solid rgba(255,255,255,0.08)',
+              color: active ? '#34d399' : '#52525b',
             }}
-          />
-          {active ? 'ACTIVE' : 'IDLE'}
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{
+                background: active ? '#34d399' : '#52525b',
+                boxShadow: active ? '0 0 6px rgba(52,211,153,0.7)' : 'none',
+              }}
+            />
+            {active ? 'ACTIVE' : 'IDLE'}
+          </div>
         </div>
       </div>
 
