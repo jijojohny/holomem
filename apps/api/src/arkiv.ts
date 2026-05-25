@@ -75,6 +75,69 @@ export async function readMemory(entityKey: string): Promise<MemoryRecord | null
   };
 }
 
+export interface EdgeRecord {
+  entityKey: string;
+  parentKey: string;
+  childKey: string;
+  edgeType: string;
+  sessionId: string;
+}
+
+export async function writeRelationshipEdge(params: {
+  parentKey: string;
+  childKey: string;
+  edgeType: string;
+  sessionId: string;
+}): Promise<{ entityKey: string; txHash: string }> {
+  const attributes = [
+    PROJECT_ATTRIBUTE,
+    { key: 'type', value: 'relationship-edge' },
+    { key: 'parentKey', value: params.parentKey },
+    { key: 'childKey', value: params.childKey },
+    { key: 'edgeType', value: params.edgeType },
+    { key: 'sessionId', value: params.sessionId },
+  ];
+
+  return enqueueWrite(() =>
+    walletClient.createEntity({
+      payload: jsonToPayload({ edgeType: params.edgeType, createdAt: new Date().toISOString() }),
+      contentType: 'application/json',
+      attributes,
+      expiresIn: TTL_SECONDS['episodic'],
+    })
+  );
+}
+
+export async function listEdgesByParent(parentKey: string): Promise<EdgeRecord[]> {
+  const result = await publicClient
+    .buildQuery()
+    .where(
+      and([
+        eq('project', PROJECT_VALUE),
+        eq('type', 'relationship-edge'),
+        eq('parentKey', parentKey),
+      ])
+    )
+    .withAttributes(true)
+    .withPayload(false)
+    .limit(50)
+    .fetch();
+
+  return result.entities.map((entity: any) => {
+    const attrs: Record<string, string> = {};
+    for (const a of (entity.attributes ?? [])) {
+      attrs[String(a.key)] = String(a.value);
+    }
+    return {
+      entityKey: entity.key,
+      parentKey: attrs['parentKey'] ?? '',
+      childKey: attrs['childKey'] ?? '',
+      edgeType: attrs['edgeType'] ?? '',
+      sessionId: attrs['sessionId'] ?? '',
+    };
+  });
+}
+
 export async function listSessionMemories(sessionId: string): Promise<MemoryRecord[]> {
   const result = await publicClient
     .buildQuery()

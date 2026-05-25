@@ -100,3 +100,22 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 
 CREATE INDEX IF NOT EXISTS webhook_deliveries_idx
   ON webhook_deliveries (webhook_id, created_at DESC);
+
+-- Tracks relationship-edge entities (second Arkiv entity type — links between memory nodes)
+CREATE TABLE IF NOT EXISTS edge_index (
+  entity_key  TEXT PRIMARY KEY,
+  api_key_id  UUID NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+  parent_key  TEXT NOT NULL,
+  child_key   TEXT NOT NULL,
+  edge_type   TEXT NOT NULL DEFAULT 'linked',
+  session_id  TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at  TIMESTAMPTZ NOT NULL,
+  deleted_at  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS edge_index_parent_idx
+  ON edge_index (api_key_id, parent_key) WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS edge_index_session_idx
+  ON edge_index (api_key_id, session_id) WHERE deleted_at IS NULL;

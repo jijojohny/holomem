@@ -182,8 +182,12 @@ const TOC = [
   { id: 'list-sessions', label: 'listSessions()' },
   { id: 'delete-session',label: 'deleteSession()' },
   { id: 'pin',           label: 'pin() / unpin()' },
+  { id: 'search',        label: 'search()' },
   { id: 'usage-method',  label: 'usage()' },
   { id: 'tiers',         label: 'Memory Tiers' },
+  { id: 'semantic',      label: 'Semantic Search' },
+  { id: 'adapters',      label: 'Framework Adapters' },
+  { id: 'teams',         label: 'Teams' },
   { id: 'encryption',    label: 'Encryption Keys' },
   { id: 'rest',          label: 'REST API' },
   { id: 'webhooks',      label: 'Webhooks' },
@@ -543,6 +547,59 @@ await mem.unpin(key);
               </Method>
             </div>
 
+            {/* ── search() ────────────────────────────────────────────── */}
+            <div id="search" className="scroll-mt-8">
+              <Method
+                signature="mem.search(queryText, opts?)"
+                description="Find memories by semantic similarity. Embeds the query client-side using your embed callback, then calls POST /v1/memories/search. Requires embed= to be set in the constructor."
+                params={[
+                  { name: 'queryText', type: 'string', desc: 'Natural-language query to embed and compare against stored embeddings.' },
+                  { name: 'opts.sessionId', type: 'string?', desc: 'Restrict search to a specific session.' },
+                  { name: 'opts.agentId', type: 'string?', desc: 'Restrict search to a specific agent.' },
+                  { name: 'opts.limit', type: 'number?', desc: 'Max results to return (default 10, max 50).' },
+                  { name: 'opts.threshold', type: 'number?', desc: 'Minimum cosine similarity score 0–1 (default 0.7).' },
+                ]}
+                returns="Promise<SearchResult[]>"
+              >
+                <CodeBlock lang="ts" code={`
+import { HoloMem } from '@holomem/sdk';
+import OpenAI from 'openai';
+
+const openai = new OpenAI();
+
+const mem = new HoloMem({
+  apiKey: process.env.HOLOMEM_API_KEY!,
+  encryptionKey: process.env.HOLOMEM_ENC_KEY,
+  // Embedding is computed client-side — server never sees plaintext
+  embed: async (text) => {
+    const res = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: text,
+    });
+    return res.data[0].embedding;
+  },
+});
+
+// Write memories — embedding is auto-computed and stored
+await mem.write('my-session', 'User prefers dark mode');
+await mem.write('my-session', 'User is located in Tokyo');
+
+// Search by semantic similarity
+const results = await mem.search('What are the user preferences?', {
+  sessionId: 'my-session',
+  threshold: 0.75,
+});
+
+for (const r of results) {
+  console.log(\`[\${r.score.toFixed(3)}] \${r.plaintext}\`);
+}
+`} />
+                <Callout type="info">
+                  The <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">embed</code> callback runs entirely in your process — HoloMem never sees the plaintext or the embedding. The embedding is stored alongside the encrypted ciphertext in the index.
+                </Callout>
+              </Method>
+            </div>
+
             {/* ── usage() ─────────────────────────────────────────────── */}
             <div id="usage-method" className="scroll-mt-8">
               <Method
@@ -603,6 +660,114 @@ console.log(\`\${stats.memories.active} active memory nodes\`);
                 </div>
               ))}
             </div>
+          </Section>
+
+          {/* ── Semantic Search ─────────────────────────────────────── */}
+          <Section id="semantic" title="Semantic Search" subtitle="Find memories by meaning, not just session. Embeddings stay in your process — the server never sees plaintext.">
+            <p className="text-[13px] text-zinc-400 leading-relaxed mb-4">
+              Pass an <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">embed</code> callback to the constructor. Every <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">write()</code> will auto-embed the plaintext client-side before encrypting. <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">search()</code> embeds the query the same way and runs a vector cosine similarity scan on Postgres via pgvector.
+            </p>
+            <Callout type="info">
+              The embed function runs in your process <strong className="text-white font-semibold">before</strong> encryption. The vector stored on the server is a fingerprint of the ciphertext — not the plaintext — preserving the zero-knowledge guarantee.
+            </Callout>
+            <p className="text-[13px] font-semibold text-white mb-2">Python example (openai embeddings):</p>
+            <CodeBlock lang="ts" label="Python" code={`
+from holomem import HoloMem
+from openai import OpenAI
+
+oai = OpenAI()
+
+def embed(text: str) -> list[float]:
+    return oai.embeddings.create(
+        model="text-embedding-3-small", input=text
+    ).data[0].embedding
+
+mem = HoloMem(
+    api_key="hm_live_xxx",
+    encryption_key="your-hex-key",
+    embed=embed,
+)
+
+mem.write("session-001", "User prefers concise bullet-point answers")
+mem.write("session-001", "User is a senior backend engineer")
+
+results = mem.search("What communication style does the user prefer?",
+                     session_id="session-001", threshold=0.75)
+
+for r in results:
+    print(f"[{r.score:.3f}] {r.plaintext}")
+`} />
+          </Section>
+
+          {/* ── Framework Adapters ──────────────────────────────────── */}
+          <Section id="adapters" title="Framework Adapters" subtitle="Drop HoloMem into LangGraph, CrewAI, or AutoGen with zero glue code.">
+            <p className="text-[13px] font-semibold text-white mb-2">LangGraph BaseStore</p>
+            <p className="text-[13px] text-zinc-400 leading-relaxed mb-3">
+              <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">HoloMemStore</code> implements LangGraph's <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">BaseStore</code> interface — pass it directly to <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">StateGraph.compile(store=...)</code>. Namespace tuples map to session IDs joined by <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">/</code>.
+            </p>
+            <CodeBlock lang="ts" label="Python — LangGraph" code={`
+from holomem.langgraph import HoloMemStore
+from langgraph.graph import StateGraph
+
+store = HoloMemStore(
+    api_key="hm_live_xxx",
+    encryption_key="your-hex-key",
+)
+
+# All memory ops in your graph are now encrypted + on-chain
+graph = builder.compile(store=store)
+result = await graph.ainvoke(inputs, config={"configurable": {"thread_id": "run-001"}})
+`} />
+
+            <p className="text-[13px] font-semibold text-white mb-2 mt-6">LangChain / CrewAI Tools</p>
+            <p className="text-[13px] text-zinc-400 leading-relaxed mb-3">
+              <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">HoloMemToolkit</code> wraps write, recall, and delete as LangChain <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">Tool</code> objects compatible with CrewAI and AutoGen.
+            </p>
+            <CodeBlock lang="ts" label="Python — CrewAI" code={`
+from holomem.tools import HoloMemToolkit
+from crewai import Agent
+
+toolkit = HoloMemToolkit(
+    session_id="crew-run-001",
+    api_key="hm_live_xxx",
+    encryption_key="your-hex-key",
+    agent_id="research-agent",
+)
+
+researcher = Agent(
+    role="Research Analyst",
+    tools=toolkit.as_langchain_tools(),
+    ...
+)
+`} />
+            <Callout type="tip">
+              For AutoGen, use <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">toolkit.as_autogen_tools()</code> instead — it returns the OpenAI function-calling schema with callable entries AutoGen can register directly.
+            </Callout>
+          </Section>
+
+          {/* ── Teams ───────────────────────────────────────────────── */}
+          <Section id="teams" title="Teams" subtitle="Share encrypted memory quota across multiple API keys in your organization.">
+            <p className="text-[13px] text-zinc-400 leading-relaxed mb-4">
+              Create a team to pool the write quota across all member keys. Each key still encrypts independently — there is no shared keyring. The team tier unlocks 500,000 writes/month pooled across all members.
+            </p>
+            <CodeBlock lang="http" code={`
+# Create a team
+POST /v1/teams
+{ "name": "acme-agents" }
+
+# Add a member by customer_id
+POST /v1/teams/:id/members
+{ "customer_id": "cust_xxx", "role": "member" }
+
+# List your teams
+GET /v1/teams
+
+# List members
+GET /v1/teams/:id/members
+`} />
+            <Callout type="info">
+              Teams are managed in the <strong className="text-white font-semibold">Teams</strong> tab of the dashboard. The team owner can add or remove members at any time. Removing a member does not delete their memories.
+            </Callout>
           </Section>
 
           {/* ── Encryption Keys ─────────────────────────────────────── */}

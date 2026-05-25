@@ -1,6 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { db } from '../db/pool.js';
-import { writeMemory, readMemory, listSessionMemories, TTL_SECONDS, type TtlTier } from '../arkiv.js';
+import {
+  writeMemory, readMemory, listSessionMemories, TTL_SECONDS,
+  writeRelationshipEdge, listEdgesByParent,
+  type TtlTier,
+} from '../arkiv.js';
 import { deliverWebhooks } from '../webhooks.js';
 import '../types.js';
 
@@ -233,20 +237,28 @@ export async function memoriesRoutes(app: FastifyInstance) {
 
   // POST /v1/memories/search — vector similarity search (embeddings computed client-side)
   app.post<{ Body: SearchBody }>('/v1/memories/search', async (req, reply) => {
-    const { embedding, session_id, agent_id, limit = 10, threshold = 0.7 } = req.body;
+    const { embedding, session_id, agent_id, limit = 10 } = req.body;
+    const rawThreshold = req.body.threshold ?? 0.7;
+    const threshold = Math.max(0, Math.min(1, typeof rawThreshold === 'number' ? rawThreshold : 0.7));
 
     if (!Array.isArray(embedding) || embedding.length === 0) {
       return reply.status(400).send({ error: 'embedding array is required' });
     }
+    if (!embedding.every((v) => typeof v === 'number' && isFinite(v))) {
+      return reply.status(400).send({ error: 'embedding must be an array of finite numbers' });
+    }
+
+    const safeLimit = Math.min(typeof limit === 'number' ? limit : 10, 50);
+    const vecStr = `[${embedding.join(',')}]`;
 
     const conditions: string[] = [
       'api_key_id = $1',
       'deleted_at IS NULL',
       '(pinned = TRUE OR expires_at > NOW())',
       'embedding IS NOT NULL',
-      `(1 - (embedding <=> $2::vector)) >= ${threshold}`,
+      '(1 - (embedding <=> $2::vector)) >= $3',
     ];
-    const params: unknown[] = [req.apiKey.id, `[${embedding.join(',')}]`, Math.min(limit, 50)];
+    const params: unknown[] = [req.apiKey.id, vecStr, threshold, safeLimit];
 
     if (session_id) {
       conditions.push(`session_id = $${params.length + 1}`);
@@ -272,7 +284,7 @@ export async function memoriesRoutes(app: FastifyInstance) {
        FROM memory_index
        WHERE ${conditions.join(' AND ')}
        ORDER BY embedding <=> $2::vector
-       LIMIT $3`,
+       LIMIT $4`,
       params,
     );
 
@@ -281,21 +293,23 @@ export async function memoriesRoutes(app: FastifyInstance) {
     }
 
     const entityKeys = rows.rows.map((r) => r.entity_key);
-    const allMemories = await listSessionMemories(session_id ?? '');
-    const memMap = new Map(allMemories.map((m) => [m.entityKey, m]));
 
-    // For cross-session search, fetch each memory individually in parallel
+    // Build ciphertext map: batch-fetch session memories when scoped; else individual reads
     const ciphertextMap = new Map<string, string>();
+    if (session_id) {
+      const sessionMems = await listSessionMemories(session_id);
+      for (const m of sessionMems) {
+        if (m.ciphertext) ciphertextMap.set(m.entityKey, m.ciphertext);
+      }
+    }
+    // Fetch any not covered by the session batch (cross-session or session not provided)
     await Promise.all(
-      entityKeys.map(async (key) => {
-        const mem = memMap.get(key);
-        if (mem?.ciphertext) {
-          ciphertextMap.set(key, mem.ciphertext);
-        } else {
+      entityKeys
+        .filter((k) => !ciphertextMap.has(k))
+        .map(async (key) => {
           const fetched = await readMemory(key);
           if (fetched?.ciphertext) ciphertextMap.set(key, fetched.ciphertext);
-        }
-      }),
+        }),
     );
 
     return reply.send({
@@ -310,6 +324,91 @@ export async function memoriesRoutes(app: FastifyInstance) {
         score: r.score,
         ciphertext: ciphertextMap.get(r.entity_key) ?? null,
       })),
+    });
+  });
+
+  // POST /v1/memories/:key/link — create a relationship-edge entity linking two memory nodes
+  app.post<{ Params: { key: string }; Body: { child_key: string; edge_type?: string } }>('/v1/memories/:key/link', async (req, reply) => {
+    const parentKey = req.params.key;
+    const { child_key: childKey, edge_type: edgeType = 'linked' } = req.body;
+
+    if (!childKey || typeof childKey !== 'string') {
+      return reply.status(400).send({ error: 'child_key is required' });
+    }
+
+    const [parentRow, childRow] = await Promise.all([
+      db.query(
+        `SELECT entity_key, session_id FROM memory_index WHERE entity_key = $1 AND api_key_id = $2 AND deleted_at IS NULL`,
+        [parentKey, req.apiKey.id],
+      ),
+      db.query(
+        `SELECT entity_key FROM memory_index WHERE entity_key = $1 AND api_key_id = $2 AND deleted_at IS NULL`,
+        [childKey, req.apiKey.id],
+      ),
+    ]);
+
+    if (parentRow.rowCount === 0) return reply.status(404).send({ error: 'parent memory not found' });
+    if (childRow.rowCount === 0) return reply.status(404).send({ error: 'child memory not found' });
+
+    const sessionId: string = parentRow.rows[0].session_id;
+    const { entityKey, txHash } = await writeRelationshipEdge({ parentKey, childKey, edgeType, sessionId });
+
+    const expiresAt = new Date(Date.now() + TTL_SECONDS['episodic'] * 1000);
+    await db.query(
+      `INSERT INTO edge_index (entity_key, api_key_id, parent_key, child_key, edge_type, session_id, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [entityKey, req.apiKey.id, parentKey, childKey, edgeType, sessionId, expiresAt.toISOString()],
+    );
+
+    await db.query(
+      `INSERT INTO usage_events (api_key_id, event_type, session_id, entity_key)
+       VALUES ($1, 'write', $2, $3)`,
+      [req.apiKey.id, sessionId, entityKey],
+    );
+
+    return reply.status(201).send({ entity_key: entityKey, tx_hash: txHash, edge_type: edgeType, parent_key: parentKey, child_key: childKey });
+  });
+
+  // GET /v1/memories/:key/links — list relationship-edge entities anchored to a memory node
+  app.get<{ Params: { key: string } }>('/v1/memories/:key/links', async (req, reply) => {
+    const parentKey = req.params.key;
+
+    const parentRow = await db.query(
+      `SELECT entity_key FROM memory_index WHERE entity_key = $1 AND api_key_id = $2 AND deleted_at IS NULL`,
+      [parentKey, req.apiKey.id],
+    );
+    if (parentRow.rowCount === 0) return reply.status(404).send({ error: 'memory not found' });
+
+    const rows = await db.query<{
+      entity_key: string;
+      child_key: string;
+      edge_type: string;
+      session_id: string;
+      created_at: string;
+    }>(
+      `SELECT entity_key, child_key, edge_type, session_id, created_at
+       FROM edge_index
+       WHERE parent_key = $1 AND api_key_id = $2 AND deleted_at IS NULL AND expires_at > NOW()
+       ORDER BY created_at DESC
+       LIMIT 50`,
+      [parentKey, req.apiKey.id],
+    );
+
+    // Also verify on-chain via Arkiv query (uses PROJECT_ATTRIBUTE filter)
+    const onChainEdges = await listEdgesByParent(parentKey);
+    const onChainKeys = new Set(onChainEdges.map((e) => e.entityKey));
+
+    return reply.send({
+      parent_key: parentKey,
+      links: rows.rows
+        .filter((r) => onChainKeys.has(r.entity_key))
+        .map((r) => ({
+          entity_key: r.entity_key,
+          child_key: r.child_key,
+          edge_type: r.edge_type,
+          session_id: r.session_id,
+          created_at: r.created_at,
+        })),
     });
   });
 

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import DashboardShell from '../../../components/DashboardShell';
-import { apiGet, apiDelete, AuthError, type MemoryEntry } from '../../../lib/api';
+import { apiGet, apiDelete, apiPatch, AuthError, type MemoryEntry } from '../../../lib/api';
 import { useRequireAuth } from '../../../lib/auth';
 import { useToast } from '../../../components/Toast';
 
@@ -65,6 +65,7 @@ export default function SessionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deletingSession, setDeletingSession] = useState(false);
+  const [pinning, setPinning] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,6 +99,19 @@ export default function SessionDetailPage() {
     } catch {
       toast('Failed to delete session', 'error');
       setDeletingSession(false);
+    }
+  }
+
+  async function togglePin(key: string, currentlyPinned: boolean) {
+    setPinning(key);
+    try {
+      await apiPatch(`/v1/memories/${key}`, { pinned: !currentlyPinned });
+      setMemories((m) => m.map((x) => x.entity_key === key ? { ...x, pinned: !currentlyPinned } : x));
+      toast(currentlyPinned ? 'Memory unpinned' : 'Memory pinned — TTL bypassed', 'success');
+    } catch {
+      toast('Failed to update pin', 'error');
+    } finally {
+      setPinning(null);
     }
   }
 
@@ -289,10 +303,10 @@ export default function SessionDetailPage() {
           {!loading && memories.length > 0 && (
             <div
               className="grid items-center px-5 py-2.5 gap-4"
-              style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1.5fr 48px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+              style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1.5fr 44px 44px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
             >
-              {['ENTITY KEY', 'AGENT', 'TIER', 'TTL LEFT', 'CREATED', ''].map((h) => (
-                <p key={h} className="text-[9px] font-bold tracking-[0.18em] uppercase text-zinc-600">{h}</p>
+              {['ENTITY KEY', 'AGENT', 'TIER', 'TTL LEFT', 'CREATED', '', ''].map((h, i) => (
+                <p key={i} className="text-[9px] font-bold tracking-[0.18em] uppercase text-zinc-600">{h}</p>
               ))}
             </div>
           )}
@@ -321,7 +335,7 @@ export default function SessionDetailPage() {
                 <div
                   key={m.entity_key}
                   className="grid items-center px-5 py-3.5 gap-4 group transition-colors hover:bg-white/[0.02]"
-                  style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1.5fr 48px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                  style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1.5fr 44px 44px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
                 >
                   {/* Entity key */}
                   <div className="flex items-center gap-2 min-w-0">
@@ -365,11 +379,35 @@ export default function SessionDetailPage() {
                   {/* Created */}
                   <span className="text-[10px] text-zinc-600 font-mono">{formatDate(m.created_at)}</span>
 
+                  {/* Pin */}
+                  <button
+                    onClick={() => togglePin(m.entity_key, m.pinned)}
+                    disabled={pinning === m.entity_key}
+                    className={`justify-self-end w-8 h-8 flex items-center justify-center rounded-lg transition-all disabled:opacity-30 focus-visible:ring-2 focus-visible:ring-violet-500 ${m.pinned ? '' : 'opacity-0 group-hover:opacity-100'}`}
+                    style={{
+                      color: m.pinned ? '#a78bfa' : 'rgba(113,113,122,0.7)',
+                      background: m.pinned ? 'rgba(167,139,250,0.12)' : 'transparent',
+                      border: m.pinned ? '1px solid rgba(167,139,250,0.25)' : '1px solid transparent',
+                    }}
+                    aria-label={m.pinned ? 'Unpin memory' : 'Pin memory'}
+                    title={m.pinned ? 'Pinned — click to unpin' : 'Pin to bypass TTL expiry'}
+                  >
+                    {pinning === m.entity_key ? (
+                      <svg width="11" height="11" viewBox="0 0 11 11" fill="none" className="animate-spin" aria-hidden="true">
+                        <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" strokeWidth="1.4" strokeDasharray="12 6"/>
+                      </svg>
+                    ) : (
+                      <svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true">
+                        <path d="M7 1 10 4 7.5 6.5 9 10 5.5 6.5 1 9 4.5 5.5 2 3l3 .5L7 1Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill={m.pinned ? 'currentColor' : 'none'}/>
+                      </svg>
+                    )}
+                  </button>
+
                   {/* Delete */}
                   <button
                     onClick={() => deleteMemory(m.entity_key)}
                     disabled={deleting === m.entity_key}
-                    className="justify-self-end opacity-0 group-hover:opacity-100 transition-opacity w-8 h-8 flex items-center justify-center rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-30 transition-colors focus-visible:ring-2 focus-visible:ring-red-500"
+                    className="justify-self-end opacity-0 group-hover:opacity-100 transition-opacity w-8 h-8 flex items-center justify-center rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-30 focus-visible:ring-2 focus-visible:ring-red-500"
                     style={{ border: '1px solid transparent' }}
                     aria-label={`Delete memory ${m.entity_key}`}
                   >

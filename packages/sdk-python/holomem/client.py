@@ -81,7 +81,6 @@ class HoloMem:
 
         if encryption_key:
             self._priv_hex = encryption_key
-            from ecies.utils import generate_key
             from coincurve import PublicKey
             priv_bytes = bytes.fromhex(encryption_key)
             self._pub_hex = PublicKey.from_valid_secret(priv_bytes).format(compressed=True).hex()

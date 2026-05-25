@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import DashboardShell from '../../components/DashboardShell';
-import { apiGet, apiPost, apiDelete, apiPatch, AuthError, type Team, type TeamMember } from '../../lib/api';
+import { apiGet, apiPost, apiDelete, AuthError, type Team, type TeamMember } from '../../lib/api';
 import { useRequireAuth } from '../../lib/auth';
 import { useToast } from '../../components/Toast';
 

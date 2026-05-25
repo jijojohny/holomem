@@ -116,8 +116,8 @@ User / LLM Application
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/holomem-network/holomem-core.git
-cd holomem-core
+git clone https://github.com/jijojohny/holomem.git
+cd holomem
 nvm use 22.10.0
 npm install
 ```
@@ -236,3 +236,15 @@ HoloMem uses **ECIES (Elliptic Curve Integrated Encryption Scheme)** with the ag
 MIT — see [LICENSE](./LICENSE)
 
 Built for the **Web3 Database Builder Challenge** on Arkiv Braga testnet.
+
+---
+
+## Demo
+
+**Live dashboard:** [https://holomem-dashboard.vercel.app](https://holomem-dashboard.vercel.app)
+
+**GitHub:** [https://github.com/jijojohny/holomem](https://github.com/jijojohny/holomem)
+
+**Arkiv explorer:** [https://explorer.braga.hoodi.arkiv.network](https://explorer.braga.hoodi.arkiv.network)
+
+**Submission theme:** AI — cryptographic memory mesh for autonomous collaborative agent swarms.
