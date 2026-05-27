@@ -13,6 +13,10 @@ __all__ = [
     "HoloMemStore",      # langgraph
     "HoloMemToolkit",    # tools (LangChain, CrewAI, AutoGen)
     "HoloMemChatHistory",  # langchain
+    # CrewAI-native memory backend
+    "HoloMemStorage",        # crewai storage layer
+    "HoloMemCrewAIConfig",   # crewai config dataclass
+    "patch_crew_memory",     # crewai crew patcher
 ]
 
 
@@ -26,4 +30,7 @@ def __getattr__(name: str):
     if name == "HoloMemChatHistory":
         from .langchain import HoloMemChatHistory
         return HoloMemChatHistory
+    if name in ("HoloMemStorage", "HoloMemCrewAIConfig", "patch_crew_memory"):
+        from .crewai import HoloMemStorage, HoloMemCrewAIConfig, patch_crew_memory
+        return locals()[name]
     raise AttributeError(f"module 'holomem' has no attribute {name!r}")

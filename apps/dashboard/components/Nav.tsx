@@ -62,6 +62,15 @@ const NAV = [
     ),
   },
   {
+    href: '/swarm',
+    label: 'Swarm',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M8 1.5 9.5 6h4.5l-3.5 2.5 1.5 4.5L8 10.5l-4 2.5 1.5-4.5L2 6h4.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+      </svg>
+    ),
+  },
+  {
     href: '/teams',
     label: 'Teams',
     icon: (

@@ -185,6 +185,9 @@ function NodeSkeleton() {
 }
 
 /* ─── Page ────────────────────────────────────────────────────────────── */
+type StatusFilter = 'all' | 'active' | 'idle';
+type OnChainFilter = 'all' | 'onchain';
+
 export default function SessionsPage() {
   useRequireAuth();
   const router = useRouter();
@@ -192,6 +195,8 @@ export default function SessionsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'activity' | 'memories'>('activity');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [onChainFilter, setOnChainFilter] = useState<OnChainFilter>('all');
 
   useEffect(() => {
     apiGet<{ sessions: Session[] }>('/v1/sessions')
@@ -206,9 +211,12 @@ export default function SessionsPage() {
       const q = search.trim().toLowerCase();
       s = s.filter((x) => x.session_id.toLowerCase().includes(q));
     }
+    if (statusFilter === 'active') s = s.filter((x) => isActive(x.last_activity));
+    if (statusFilter === 'idle') s = s.filter((x) => !isActive(x.last_activity));
+    if (onChainFilter === 'onchain') s = s.filter((x) => x.session_entity_key !== null);
     if (sort === 'memories') return [...s].sort((a, b) => b.memory_count - a.memory_count);
     return [...s].sort((a, b) => new Date(b.last_activity).getTime() - new Date(a.last_activity).getTime());
-  }, [sessions, search, sort]);
+  }, [sessions, search, sort, statusFilter, onChainFilter]);
 
   const activeCount = sessions.filter((s) => isActive(s.last_activity)).length;
   const totalMemories = sessions.reduce((acc, s) => acc + s.memory_count, 0);
@@ -297,12 +305,16 @@ export default function SessionsPage() {
           />
         </div>
 
-        {/* ── Search bar ──────────────────────────────────────────── */}
+        {/* ── Search + filter bar ─────────────────────────────────── */}
         <div
           className="rounded-xl overflow-hidden"
           style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' }}
         >
-          <div className="flex items-center gap-3 px-4 py-3">
+          {/* Search row */}
+          <div
+            className="flex items-center gap-3 px-4 py-3"
+            style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+          >
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none" className="text-zinc-600 shrink-0" aria-hidden="true">
               <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" strokeWidth="1.4"/>
               <path d="m9 9 2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
@@ -326,9 +338,43 @@ export default function SessionsPage() {
                 </svg>
               </button>
             )}
-            <span className="text-[9px] font-bold tracking-[0.14em] uppercase text-zinc-700 ml-2">
-              {loading ? '—' : `${filtered.length} node${filtered.length !== 1 ? 's' : ''}`}
+            <span className="text-[9px] font-bold tracking-[0.14em] uppercase text-zinc-600 ml-2 shrink-0">
+              {loading ? '—' : `Showing ${filtered.length} of ${sessions.length}`}
             </span>
+          </div>
+
+          {/* Filter pills row */}
+          <div className="flex items-center gap-2 px-4 py-2.5 flex-wrap">
+            <span className="text-[9px] font-bold tracking-[0.14em] uppercase text-zinc-700 mr-1">Status:</span>
+            {(['all', 'active', 'idle'] as StatusFilter[]).map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className="px-2.5 py-1 rounded-full text-[9px] font-bold tracking-[0.12em] uppercase transition-colors focus-visible:ring-2 focus-visible:ring-violet-500"
+                style={{
+                  background: statusFilter === s ? 'rgba(124,58,237,0.2)' : 'rgba(255,255,255,0.04)',
+                  border: statusFilter === s ? '1px solid rgba(124,58,237,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                  color: statusFilter === s ? '#c4b5fd' : 'rgba(113,113,122,0.8)',
+                }}
+              >
+                {s === 'all' ? 'All' : s === 'active' ? 'Active' : 'Idle'}
+              </button>
+            ))}
+            <span className="text-[9px] font-bold tracking-[0.14em] uppercase text-zinc-700 ml-3 mr-1">Chain:</span>
+            {(['all', 'onchain'] as OnChainFilter[]).map((s) => (
+              <button
+                key={s}
+                onClick={() => setOnChainFilter(s)}
+                className="px-2.5 py-1 rounded-full text-[9px] font-bold tracking-[0.12em] uppercase transition-colors focus-visible:ring-2 focus-visible:ring-violet-500"
+                style={{
+                  background: onChainFilter === s ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.04)',
+                  border: onChainFilter === s ? '1px solid rgba(167,139,250,0.35)' : '1px solid rgba(255,255,255,0.08)',
+                  color: onChainFilter === s ? '#a78bfa' : 'rgba(113,113,122,0.8)',
+                }}
+              >
+                {s === 'all' ? 'All' : '⬡ On-chain only'}
+              </button>
+            ))}
           </div>
         </div>
 

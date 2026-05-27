@@ -264,6 +264,7 @@ export default function SessionDetailPage() {
   const [pinning, setPinning] = useState<string | null>(null);
   const [graph, setGraph] = useState<GraphData | null>(null);
   const [graphLoading, setGraphLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   const loadGraph = useCallback(async () => {
     setGraphLoading(true);
@@ -345,6 +346,34 @@ export default function SessionDetailPage() {
     }
   }
 
+  async function exportSession() {
+    setExporting(true);
+    try {
+      const data = await apiGet<{ memories: MemoryEntry[] }>(
+        `/v1/memories?session_id=${encodeURIComponent(sessionId)}&limit=100`
+      );
+      const exportObj = {
+        session_id: sessionId,
+        exported_at: new Date().toISOString(),
+        session_entity_key: graph?.session?.entity_key ?? null,
+        memories: data.memories,
+      };
+      const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const date = new Date().toISOString().slice(0, 10);
+      anchor.href = url;
+      anchor.download = `holomem-session-${sessionId}-${date}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast('Session exported successfully', 'success');
+    } catch {
+      toast('Failed to export session', 'error');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const agents = [...new Set(memories.map((m) => m.agent_id).filter(Boolean))];
   const tiers = memories.reduce<Record<string, number>>((acc, m) => {
     acc[m.ttl_tier] = (acc[m.ttl_tier] ?? 0) + 1;
@@ -387,6 +416,24 @@ export default function SessionDetailPage() {
                 <path d="M10 6A4 4 0 1 1 6 2M6 2l2-2M6 2l2 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
               Refresh
+            </button>
+            <button
+              onClick={exportSession}
+              disabled={exporting}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-bold tracking-[0.1em] uppercase transition-colors focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-40"
+              style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399' }}
+              aria-label="Export session"
+            >
+              {exporting ? (
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="animate-spin" aria-hidden="true">
+                  <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4" strokeDasharray="14 7"/>
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M6 1.5v7M3.5 6.5 6 9l2.5-2.5M2 10.5h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+              Export
             </button>
             {!loading && memories.length > 0 && (
               <button

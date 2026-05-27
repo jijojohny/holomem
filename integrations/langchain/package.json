@@ -1,0 +1,22 @@
+{
+  "name": "@holomem/langchain",
+  "version": "0.1.0",
+  "description": "LangChain.js integration for HoloMem — encrypted on-chain memory for AI agents",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "peerDependencies": {
+    "@langchain/core": ">=0.3.0",
+    "@holomem/sdk": "*"
+  },
+  "devDependencies": {
+    "@langchain/core": "^0.3.0",
+    "@holomem/sdk": "file:../../packages/sdk-ts",
+    "typescript": "^5.4.0"
+  },
+  "keywords": ["langchain", "holomem", "memory", "ai", "web3"],
+  "license": "MIT"
+}
