@@ -1,12 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { encryptEpisodicData, decryptEpisodicData } from '../crypto/ecies.js';
 import { createMemoryNode, createRelationshipEdge } from '../database/writer.js';
 import { getChildMemories, getEntityWithPayload } from '../database/reader.js';
 import { agentPublicKey, agentPrivateKey } from '../database/client.js';
 import { ExpirationTime } from '@arkiv-network/sdk/utils';
 import { TTL } from '../constants.js';
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+import { type LLMProvider } from '../llm.js';
 
 export interface ConsolidatorOutput {
   finalEntityKey: string;
@@ -20,6 +18,7 @@ export async function runConsolidator(
   planEntityKey: string,
   resultEntityKeys: string[],
   mock = false,
+  llm?: LLMProvider,
 ): Promise<ConsolidatorOutput> {
   if (mock) {
     const report = `[Mock Final Report]
@@ -64,20 +63,16 @@ HoloMem's cryptographic memory mesh positions itself at the intersection of thes
 
   const validFindings = decryptedFindings.filter(Boolean) as string[];
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 2048,
-    messages: [{
-      role: 'user',
-      content: `You are a synthesis agent finalizing a multi-agent research swarm. Consolidate the following research findings into a comprehensive, well-structured final report with an executive summary, key insights per section, and a conclusion.
+  if (!llm) throw new Error('LLMProvider is required when not in mock mode');
+
+  const report = await llm.complete(
+    `You are a synthesis agent finalizing a multi-agent research swarm. Consolidate the following research findings into a comprehensive, well-structured final report with an executive summary, key insights per section, and a conclusion.
 
 ${validFindings.join('\n\n---\n\n')}
 
 Format your response as a professional research report with clear headers using markdown.`,
-    }],
-  });
-
-  const report = response.content[0].type === 'text' ? response.content[0].text : 'No report generated.';
+    2048,
+  );
 
   const finalPayload = JSON.stringify({
     report,

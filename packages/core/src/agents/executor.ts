@@ -1,12 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { encryptEpisodicData, decryptEpisodicData } from '../crypto/ecies.js';
 import { createMemoryNode, createRelationshipEdge } from '../database/writer.js';
 import { getEntityWithPayload } from '../database/reader.js';
 import { agentPublicKey, agentPrivateKey } from '../database/client.js';
 import { ExpirationTime } from '@arkiv-network/sdk/utils';
 import { TTL, PlanStep } from '../constants.js';
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+import { type LLMProvider } from '../llm.js';
 
 export interface ExecutorOutput {
   resultEntityKey: string;
@@ -22,6 +20,7 @@ export async function runExecutor(
   planEntityKey: string,
   step: PlanStep,
   mock = false,
+  llm?: LLMProvider,
 ): Promise<ExecutorOutput> {
   if (mock) {
     const key = `0x${'c'.repeat(62)}${step.index.toString().padStart(2, '0')}`;
@@ -36,21 +35,17 @@ export async function runExecutor(
     };
   }
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1536,
-    messages: [{
-      role: 'user',
-      content: `You are Research Agent #${step.index + 1} in an autonomous swarm.
+  if (!llm) throw new Error('LLMProvider is required when not in mock mode');
+
+  const findings = await llm.complete(
+    `You are Research Agent #${step.index + 1} in an autonomous swarm.
 
 Your assigned subtask: "${step.title}"
 Instruction: ${step.instruction}
 
 Provide a thorough, well-structured research response (200-400 words). Focus only on your assigned subtask. Be specific, insightful, and cite relevant trends or developments.`,
-    }],
-  });
-
-  const findings = response.content[0].type === 'text' ? response.content[0].text : '';
+    1536,
+  );
   const resultPayload = JSON.stringify({
     stepIndex: step.index,
     stepTitle: step.title,

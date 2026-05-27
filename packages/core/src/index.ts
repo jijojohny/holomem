@@ -6,10 +6,24 @@ import { runExecutor, ExecutorOutput } from './agents/executor.js';
 import { runConsolidator } from './agents/consolidator.js';
 import { ExpirationTime } from '@arkiv-network/sdk/utils';
 import { TTL } from './constants.js';
+import { createProvider, type ProviderName } from './llm.js';
 
 const args = process.argv.slice(2);
 const mockMode = args.includes('--mock');
-const question = args.filter((a) => a !== '--mock').join(' ') ||
+
+// --provider anthropic | --provider openai  (default: auto-detect from env)
+const providerFlagIdx = args.indexOf('--provider');
+const providerArg =
+  providerFlagIdx !== -1
+    ? (args[providerFlagIdx + 1] as ProviderName | 'auto')
+    : 'auto';
+
+const filteredArgs = args.filter(
+  (a, i) => a !== '--mock' && a !== '--provider' && args[providerFlagIdx] !== '--provider'
+    ? true
+    : i !== providerFlagIdx && i !== providerFlagIdx + 1,
+);
+const question = filteredArgs.join(' ') ||
   'What are the critical challenges and opportunities facing decentralized AI infrastructure in 2026?';
 
 function shortKey(key: string): string {
@@ -22,14 +36,22 @@ function formatTTL(seconds: number): string {
   return `${Math.round(seconds / 60)}min`;
 }
 
-function printBanner() {
+function printBanner(providerName?: string, modelName?: string) {
   console.log(chalk.bold.cyan('\n╔══════════════════════════════════════════════════════════════╗'));
   console.log(chalk.bold.cyan('║') + chalk.bold.white('        HoloMem: Cryptographic Memory Mesh') + chalk.bold.cyan('               ║'));
   console.log(chalk.bold.cyan('║') + chalk.gray('        Multi-Agent Research Swarm on Arkiv Braga') + chalk.bold.cyan('        ║'));
   console.log(chalk.bold.cyan('╚══════════════════════════════════════════════════════════════╝\n'));
 
   if (mockMode) {
-    console.log(chalk.yellow('  ⚡ Running in MOCK mode (no Arkiv writes, no Claude calls)\n'));
+    console.log(chalk.yellow('  ⚡ Running in MOCK mode (no Arkiv writes, no LLM calls)\n'));
+  } else if (providerName && modelName) {
+    const providerColor = providerName === 'openai' ? chalk.bold.green : chalk.bold.magenta;
+    console.log(
+      chalk.gray('  LLM Provider: ') +
+      providerColor(providerName.toUpperCase()) +
+      chalk.gray('  model: ') +
+      chalk.white(modelName) + '\n',
+    );
   }
   console.log(chalk.bold('  Research Question:'));
   console.log(chalk.white(`  "${question}"\n`));
@@ -83,7 +105,19 @@ function printMemoryGraph(
 }
 
 async function main() {
-  printBanner();
+  // ── Initialise LLM provider ─────────────────────────────────────
+  let llm: import('./llm.js').LLMProvider | undefined;
+  if (!mockMode) {
+    try {
+      llm = createProvider(providerArg);
+    } catch (err: any) {
+      console.error(chalk.red('\n  ✗ LLM provider error: ') + err.message);
+      console.error(chalk.gray('    Run with --mock to test without an API key.\n'));
+      process.exit(1);
+    }
+  }
+
+  printBanner(llm?.name, llm?.model);
 
   // ── Step 1: Planner ─────────────────────────────────────────────
   const plannerSpinner = ora({
@@ -93,7 +127,7 @@ async function main() {
 
   let plannerResult;
   try {
-    plannerResult = await runPlanner(question, mockMode);
+    plannerResult = await runPlanner(question, mockMode, llm);
     plannerSpinner.succeed(
       chalk.bold.green('✓ Plan written to Arkiv') +
       chalk.gray('  entityKey: ') + chalk.white(shortKey(plannerResult.planEntityKey)) +
@@ -127,6 +161,7 @@ async function main() {
         plannerResult.planEntityKey,
         step,
         mockMode,
+        llm,
       );
       executorOutputs.push(output);
       spinner.succeed(
@@ -154,6 +189,7 @@ async function main() {
       plannerResult.planEntityKey,
       executorOutputs.map((o) => o.resultEntityKey),
       mockMode,
+      llm,
     );
     consolidatorSpinner.succeed(
       chalk.bold.green('✓ Final report written') +

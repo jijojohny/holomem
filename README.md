@@ -188,7 +188,7 @@ holomem/
   nvm install 22.10.0 && nvm use 22.10.0
   ```
 - Docker (for local PostgreSQL)
-- An Anthropic API key (for the research swarm demo)
+- An LLM API key — **Anthropic** (`ANTHROPIC_API_KEY`) **or OpenAI** (`OPENAI_API_KEY`), or both
 
 ### 1. Clone and install
 
@@ -226,9 +226,11 @@ Edit `.env`:
 # Arkiv / Braga testnet
 BRAGA_RPC_URL=https://braga.hoodi.arkiv.network/rpc
 
-# packages/core — Claude research swarm demo
+# packages/core — research swarm demo
+# Set at least one LLM key. Both can coexist; Anthropic takes priority in auto-detect.
 AGENT_PRIVATE_KEY=0x<your-private-key>
-ANTHROPIC_API_KEY=sk-ant-<your-key>
+ANTHROPIC_API_KEY=sk-ant-<your-key>    # Claude Haiku 4.5
+OPENAI_API_KEY=sk-<your-key>           # GPT-4o-mini
 
 # apps/api — REST API server
 POOL_WALLET_PRIVATE_KEY=0x<server-wallet-private-key>
@@ -284,15 +286,25 @@ npm run dashboard:dev
 
 ### 9. Run the research swarm demo
 
+The demo auto-detects which LLM key is set (`ANTHROPIC_API_KEY` takes priority).
+Use `--provider` to force a specific provider.
+
 ```bash
-# Full demo — writes 3 entity types to Arkiv + calls Claude
+# Auto-detect (uses Anthropic if ANTHROPIC_API_KEY is set, otherwise OpenAI)
 npm run demo
 
-# Mock mode — no network calls, great for testing
+# Force Anthropic — Claude Haiku 4.5
+npm run demo:anthropic
+
+# Force OpenAI — GPT-4o-mini
+npm run demo:openai
+
+# Mock mode — no network calls, great for testing (no LLM key needed)
 npm run demo:mock
 
-# Custom research question
-node packages/core/dist/index.js "What is the future of zero-knowledge proofs in AI?"
+# Custom research question with explicit provider
+node packages/core/dist/index.js --provider openai "What is the future of ZK proofs in AI?"
+node packages/core/dist/index.js --provider anthropic "What is the future of ZK proofs in AI?"
 ```
 
 ---

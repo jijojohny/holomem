@@ -1,12 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'crypto';
 import { encryptEpisodicData } from '../crypto/ecies.js';
 import { createMemoryNode } from '../database/writer.js';
 import { agentPublicKey, agentPrivateKey } from '../database/client.js';
 import { ExpirationTime } from '@arkiv-network/sdk/utils';
 import { TTL, PlanStep } from '../constants.js';
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+import { type LLMProvider } from '../llm.js';
 
 interface PlannerOutput {
   sessionId: string;
@@ -15,7 +13,11 @@ interface PlannerOutput {
   steps: PlanStep[];
 }
 
-export async function runPlanner(researchQuestion: string, mock = false): Promise<PlannerOutput> {
+export async function runPlanner(
+  researchQuestion: string,
+  mock = false,
+  llm?: LLMProvider,
+): Promise<PlannerOutput> {
   const sessionId = randomUUID().split('-')[0];
 
   if (mock) {
@@ -32,12 +34,10 @@ export async function runPlanner(researchQuestion: string, mock = false): Promis
     };
   }
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1024,
-    messages: [{
-      role: 'user',
-      content: `You are a research planning agent. Break this research question into exactly 4 distinct, non-overlapping subtasks.
+  if (!llm) throw new Error('LLMProvider is required when not in mock mode');
+
+  const rawText = await llm.complete(
+    `You are a research planning agent. Break this research question into exactly 4 distinct, non-overlapping subtasks.
 
 Research question: "${researchQuestion}"
 
@@ -48,11 +48,9 @@ Return ONLY a JSON array with this exact structure, no other text:
   {"index": 2, "title": "Short title", "instruction": "Detailed instruction for this subtask"},
   {"index": 3, "title": "Short title", "instruction": "Detailed instruction for this subtask"}
 ]`,
-    }],
-  });
-
-  const rawText = response.content[0].type === 'text' ? response.content[0].text : '[]';
-  // Strip markdown code fences if Claude wraps the JSON in ```json ... ```
+    1024,
+  );
+  // Strip markdown code fences if the model wraps the JSON in ```json ... ```
   const cleaned = rawText.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   const steps: PlanStep[] = JSON.parse(cleaned);
 

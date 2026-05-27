@@ -14,6 +14,8 @@
     "dev": "node --env-file ../../.env --import tsx/esm src/index.ts",
     "demo": "node --env-file ../../.env dist/index.js \"What are the critical challenges and opportunities facing decentralized AI infrastructure in 2026?\"",
     "demo:mock": "node --env-file ../../.env dist/index.js --mock \"What are the critical challenges and opportunities facing decentralized AI infrastructure in 2026?\"",
+    "demo:openai": "node --env-file ../../.env dist/index.js --provider openai \"What are the critical challenges and opportunities facing decentralized AI infrastructure in 2026?\"",
+    "demo:anthropic": "node --env-file ../../.env dist/index.js --provider anthropic \"What are the critical challenges and opportunities facing decentralized AI infrastructure in 2026?\"",
     "test:onchain": "node --env-file ../../.env dist/test-onchain.js"
   },
   "engines": {
@@ -21,6 +23,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "openai": "^4.67.0",
     "@arkiv-network/sdk": "latest",
     "chalk": "^5.0.0",
     "dotenv": "^16.0.0",
