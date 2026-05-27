@@ -1,7 +1,7 @@
 import { encrypt, decrypt, PrivateKey } from 'eciesjs';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 
-const API_BASE = 'https://api.holomem.io';
+const API_BASE = 'https://holomem-production.up.railway.app';
 
 export type TtlTier = 'working' | 'episodic' | 'persistent';
 

@@ -340,7 +340,7 @@ const mem = new HoloMem({
               {[
                 { name: 'apiKey', type: 'string', req: true, desc: 'Your HoloMem API key (hm_live_… or hm_test_…).' },
                 { name: 'encryptionKey', type: 'string', req: false, desc: 'Hex-encoded 32-byte private key. If omitted, an ephemeral key is generated — memories cannot be recalled after process restart.' },
-                { name: 'baseUrl', type: 'string', req: false, desc: 'Override the API base URL. Defaults to https://api.holomem.io.' },
+                { name: 'baseUrl', type: 'string', req: false, desc: 'Override the API base URL. Defaults to https://holomem-production.up.railway.app.' },
               ].map((p, i, arr) => (
                 <div key={p.name} className="grid items-start px-4 py-3 gap-2" style={{ gridTemplateColumns: '140px 130px 1fr', borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
                   <div className="flex items-center gap-1.5">
@@ -954,7 +954,7 @@ const mem = HoloMem.loadKey('./agent.key', {
           {/* ── REST API ────────────────────────────────────────────── */}
           <Section id="rest" title="REST API" subtitle="Use the HTTP API directly if you're not using the TypeScript SDK.">
             <p className="text-[13px] text-zinc-400 leading-relaxed mb-4">
-              All requests require <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">Authorization: Bearer &lt;api_key&gt;</code>. The base URL is <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">https://api.holomem.io</code>.
+              All requests require <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">Authorization: Bearer &lt;api_key&gt;</code>. The base URL is <code className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded">https://holomem-production.up.railway.app</code>.
             </p>
 
             <p className="text-[13px] font-semibold text-white mb-1">Write a memory</p>

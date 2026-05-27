@@ -10,7 +10,7 @@ import httpx
 from .crypto import generate_encryption_key, encrypt_memory, decrypt_memory
 
 TtlTier = Literal["working", "episodic", "persistent"]
-_API_BASE = "https://api.holomem.io"
+_API_BASE = "https://holomem-production.up.railway.app"
 
 
 @dataclass

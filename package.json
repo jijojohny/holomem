@@ -13,6 +13,7 @@
     "demo:mock": "npm run demo:mock -w packages/core",
     "demo:openai": "npm run demo:openai -w packages/core",
     "demo:anthropic": "npm run demo:anthropic -w packages/core",
+    "demo:customer": "npm run demo:customer -w packages/core",
     "api:dev": "npm run dev -w apps/api",
     "api:start": "npm run start -w apps/api",
     "dashboard:dev": "npm run dev -w apps/dashboard",
